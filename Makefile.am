@@ -8,14 +8,13 @@ endif
 
 bin_PROGRAMS=odr-edi2edi
 
-INCLUDE=-Isrc
+INCLUDE=-Ilib
 
-common_test_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
-common_test_CXXFLAGS =-Wall -std=c++11 $(INCLUDE) $(GITVERSION_FLAGS)
-common_test_LDADD    = -lpthread
-common_test_SOURCES  = src/main.cpp \
+odr_edi2edi_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
+odr_edi2edi_CXXFLAGS =-Wall -std=c++11 $(INCLUDE) $(GITVERSION_FLAGS)
+odr_edi2edi_LDADD    = -lpthread
+odr_edi2edi_SOURCES  = src/main.cpp \
 					   lib/crc.h lib/crc.c \
-					   lib/ClockTAI.h lib/ClockTAI.cpp \
 					   lib/Globals.cpp \
 					   lib/Log.h lib/Log.cpp \
 					   lib/ReedSolomon.h lib/ReedSolomon.cpp \
@@ -23,16 +22,7 @@ common_test_SOURCES  = src/main.cpp \
 					   lib/RemoteControl.cpp \
 					   lib/Socket.h lib/Socket.cpp \
 					   lib/ThreadsafeQueue.h \
-					   lib/charset/charset.h lib/charset/charset.cpp \
-					   lib/charset/utf8.h \
-					   lib/charset/utf8/checked.h \
-					   lib/charset/utf8/core.h \
-					   lib/charset/utf8/unchecked.h \
 					   lib/edi/PFT.hpp lib/edi/PFT.cpp \
-					   lib/edi/STIDecoder.hpp lib/edi/STIDecoder.cpp \
-					   lib/edi/STIWriter.hpp lib/edi/STIWriter.cpp \
-					   lib/edi/ETIDecoder.hpp lib/edi/ETIDecoder.cpp \
-					   lib/edi/eti.hpp lib/edi/eti.cpp \
 					   lib/edi/buffer_unpack.hpp \
 					   lib/edi/common.hpp lib/edi/common.cpp \
 					   lib/edioutput/AFPacket.cpp \
