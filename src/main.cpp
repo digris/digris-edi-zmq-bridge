@@ -19,13 +19,298 @@
    along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <getopt.h>
+#include <cmath>
+#include <cstring>
+#include <chrono>
 #include <iostream>
+#include <iterator>
+#include <memory>
+#include <thread>
+#include <vector>
 #include "Log.h"
+#include "edioutput/TagItems.h"
+#include "edioutput/TagPacket.h"
+#include "edioutput/Transport.h"
 
 using namespace std;
 
+constexpr long DEFAULT_BACKOFF = 5000;
+
+static edi::configuration_t edi_conf;
+
+static void usage()
+{
+    cerr << "Usage:" << endl;
+    cerr << "odr-edi2edi [options] -c <source>" << endl << endl;
+
+    cerr << "Options:" << endl;
+    cerr << "The following options can be given only once:" << endl;
+    cerr << " -c <host:port>        Connect to given host and port using TCP." << endl;
+    cerr << " -w <delay>            Keep every ETI frame until TIST is <delay> milliseconds after current system time." << endl;
+    cerr << "                       Negative delay values are also allowed." << endl;
+    cerr << " -C <path to script>   Before starting, run the given script, and only start if it returns 0." << endl;
+    cerr << "                       This is useful for checking that NTP is properly synchronised" << endl;
+    cerr << " -x                    Drop frames where for which the wait time would be negative, i.e. frames that arrived too late." << endl;
+    cerr << " -p <destination port> Set the destination port." << endl;
+    cerr << " -P                    Disable PFT and send AFPackets." << endl;
+    cerr << " -f <fec>              Set the FEC." << endl;
+    cerr << " -i <interleave>       Enable the interleaver with this latency." << endl;
+    cerr << " -D                    Dump the EDI to edi.debug file." << endl;
+    cerr << " -v                    Enables verbose mode." << endl;
+    cerr << " -a <alignement>       Set the alignment of the TAG Packet (default 8)." << endl;
+    cerr << " -b <backoff>          Number of milliseconds to backoff after an input reset (default " << DEFAULT_BACKOFF << ")." << endl << endl;
+
+    cerr << "The following options can be given several times, when more than UDP destination is desired:" << endl;
+    cerr << " -d <destination ip>   Set the destination ip." << endl;
+    cerr << " -s <source port>      Set the source port." << endl;
+    cerr << " -S <source ip>        Select the source IP in case we want to use multicast." << endl;
+    cerr << " -t <ttl>              Set the packet's TTL." << endl << endl;
+
+    cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
+}
+
+/* There is some state inside the parsing of destination arguments,
+ * because several destinations can be given.  */
+
+static std::shared_ptr<edi::udp_destination_t> edi_destination;
+static bool source_port_set = false;
+static bool source_addr_set = false;
+static bool ttl_set = false;
+static bool dest_addr_set = false;
+
+static void add_edi_destination(void)
+{
+    if (not dest_addr_set) {
+        throw std::runtime_error("Destination address not specified for destination number " +
+                std::to_string(edi_conf.destinations.size() + 1));
+    }
+
+    edi_conf.destinations.push_back(move(edi_destination));
+    edi_destination = std::make_shared<edi::udp_destination_t>();
+
+    source_port_set = false;
+    source_addr_set = false;
+    ttl_set = false;
+    dest_addr_set = false;
+}
+
+static void parse_destination_args(char option)
+{
+    if (not edi_destination) {
+        edi_destination = std::make_shared<edi::udp_destination_t>();
+    }
+
+    switch (option) {
+        case 's':
+            if (source_port_set) {
+                add_edi_destination();
+            }
+            edi_destination->source_port = std::stoi(optarg);
+            source_port_set = true;
+            break;
+        case 'S':
+            if (source_addr_set) {
+                add_edi_destination();
+            }
+            edi_destination->source_addr = optarg;
+            source_addr_set = true;
+            break;
+        case 't':
+            if (ttl_set) {
+                add_edi_destination();
+            }
+            edi_destination->ttl = std::stoi(optarg);
+            ttl_set = true;
+            break;
+        case 'd':
+            if (dest_addr_set) {
+                add_edi_destination();
+            }
+            edi_destination->dest_addr = optarg;
+            dest_addr_set = true;
+            break;
+        default:
+            throw std::logic_error("parse_destination_args invalid");
+    }
+}
+
+static int start(int argc, char **argv)
+{
+    edi_conf.enable_pft = true;
+
+    if (argc == 0) {
+        usage();
+        return 1;
+    }
+
+    int delay_ms = 500;
+    bool drop_late_packets = false;
+    uint32_t backoff_after_reset_ms = DEFAULT_BACKOFF;
+    std::string startupcheck;
+    std::string source;
+
+    int ch = 0;
+    while (ch != -1) {
+        ch = getopt(argc, argv, "c:C:d:p:s:S:t:Pf:i:Dva:b:w:xh");
+        switch (ch) {
+            case -1:
+                break;
+            case 'c':
+                source = optarg;
+                break;
+            case 'C':
+                startupcheck = optarg;
+                break;
+            case 'd':
+            case 's':
+            case 'S':
+            case 't':
+                parse_destination_args(ch);
+                break;
+            case 'p':
+                edi_conf.dest_port = std::stoi(optarg);
+                break;
+            case 'P':
+                edi_conf.enable_pft = false;
+                break;
+            case 'f':
+                edi_conf.fec = std::stoi(optarg);
+                break;
+            case 'i':
+                {
+                    double interleave_ms = std::stod(optarg);
+                    if (interleave_ms != 0.0) {
+                        if (interleave_ms < 0) {
+                            throw std::runtime_error("EDI output: negative interleave value is invalid.");
+                        }
+
+                        auto latency_rounded = lround(interleave_ms / 24.0);
+                        if (latency_rounded * 24 > 30000) {
+                            throw std::runtime_error("EDI output: interleaving set for more than 30 seconds!");
+                        }
+
+                        edi_conf.latency_frames = latency_rounded;
+                    }
+                }
+                break;
+            case 'D':
+                edi_conf.dump = true;
+                break;
+            case 'v':
+                edi_conf.verbose = true;
+                break;
+            case 'a':
+                edi_conf.tagpacket_alignment = std::stoi(optarg);
+                break;
+            case 'b':
+                backoff_after_reset_ms = std::stoi(optarg);
+                break;
+            case 'w':
+                delay_ms = std::stoi(optarg);
+                break;
+            case 'x':
+                drop_late_packets = true;
+                break;
+            case 'h':
+            default:
+                usage();
+                return 1;
+        }
+    }
+
+    if (not startupcheck.empty()) {
+        etiLog.level(info) << "Running startup check '" << startupcheck << "'";
+        int wstatus = system(startupcheck.c_str());
+
+        if (WIFEXITED(wstatus)) {
+            if (WEXITSTATUS(wstatus) == 0) {
+                etiLog.level(info) << "Startup check ok";
+            }
+            else {
+                etiLog.level(error) << "Startup check failed, returned " << WEXITSTATUS(wstatus);
+                return 1;
+            }
+        }
+        else {
+            etiLog.level(error) << "Startup check failed, child didn't terminate normally";
+            return 1;
+        }
+    }
+
+    add_edi_destination();
+
+
+    if (source.empty()) {
+        etiLog.level(error) << "source option is missing";
+        return 1;
+    }
+
+    const auto pos_colon = source.find(":");
+    if (pos_colon == string::npos or pos_colon == 0) {
+        etiLog.level(error) << "source does not contain host:port";
+        return 1;
+    }
+
+    const string connect_to_host = source.substr(0, pos_colon-1);
+    const int connect_to_port = stod(source.substr(pos_colon+1));
+
+    if (edi_conf.dest_port == 0) {
+        etiLog.level(error) << "No EDI destination port defined";
+        return 1;
+    }
+
+    if (edi_conf.destinations.empty()) {
+        etiLog.level(error) << "No EDI destinations set";
+        return 1;
+    }
+
+    etiLog.level(info) << "Setting up EDI2EDI with delay " << delay_ms << " ms. " <<
+        (drop_late_packets ? "Will" : "Will not") << " drop late packets";
+
+
+    Socket::TCPSocket sock;
+    etiLog.level(info) << "Connecting to TCP " << connect_to_host << ":" << connect_to_port;
+    sock.connect(connect_to_host, connect_to_port);
+
+    ssize_t ret = 0;
+    do {
+        const size_t bufsize = 32;
+        std::vector<uint8_t> buf(bufsize);
+        ret = sock.recv(buf.data(), buf.size(), 0);
+        if (ret > 0) {
+            buf.resize(ret);
+            std::vector<uint8_t> frame;
+            decoder.push_bytes(buf);
+        }
+    } while (ret > 0);
+}
+
 int main(int argc, char **argv)
 {
-    etiLog.level(info) << "Hello";
+    etiLog.level(info) << "ODR-EDI2EDI " <<
+#if defined(GITVERSION)
+        GITVERSION <<
+#else
+        PACKAGE_VERSION <<
+#endif
+        " starting up";
+
+    int ret = 1;
+
+    try {
+        ret = start(argc, argv);
+
+        // To make sure things get printed to stderr
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    }
+    catch (const std::runtime_error &e) {
+        etiLog.level(error) << "Runtime error: " << e.what();
+    }
+    catch (const std::logic_error &e) {
+        etiLog.level(error) << "Logic error! " << e.what();
+    }
+
+    return ret;
 }
 
