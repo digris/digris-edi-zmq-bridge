@@ -25,6 +25,8 @@ odr_edi2edi_SOURCES  = src/main.cpp \
 					   lib/edi/PFT.hpp lib/edi/PFT.cpp \
 					   lib/edi/buffer_unpack.hpp \
 					   lib/edi/common.hpp lib/edi/common.cpp \
+					   lib/edi/ETIDecoder.hpp lib/edi/ETIDecoder.cpp \
+					   lib/edi/eti.hpp \
 					   lib/edioutput/AFPacket.cpp \
 					   lib/edioutput/AFPacket.h \
 					   lib/edioutput/EDIConfig.h \
