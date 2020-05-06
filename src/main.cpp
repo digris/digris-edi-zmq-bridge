@@ -72,6 +72,17 @@ static void usage()
 /* There is some state inside the parsing of destination arguments,
  * because several destinations can be given.  */
 
+class ReceivedTagItem : public edi::TagItem {
+    public:
+        ReceivedTagItem(const EdiDecoder::ReceivedTagPacket& rt) : m_rt(rt) { }
+
+        virtual std::vector<uint8_t> Assemble() override {
+            return m_rt.tagpacket;
+        }
+
+    private:
+        const EdiDecoder::ReceivedTagPacket& m_rt;
+};
 
 class Main : public EdiDecoder::ETIDataCollector {
     public:
@@ -99,13 +110,14 @@ class Main : public EdiDecoder::ETIDataCollector {
         virtual void add_subchannel(EdiDecoder::eti_stc_data&& stc) override { }
 
         // Tell the ETIWriter that the AFPacket is complete
-        virtual void assemble(EdiDecoder::ReceivedTagData&& tag_data) override
+        virtual void assemble(EdiDecoder::ReceivedTagPacket&& tag_data) override
         {
-            etiLog.level(info) << "Received " << tag_data.all_tags.size() << " tags at " << tag_data.timestamp.to_unix_epoch();
+            etiLog.level(info) << "Received tagpacket " << tag_data.tagpacket.size() << " bytes at " <<
+                tag_data.timestamp.to_string();
 
-            for (const auto& tag : tag_data.all_tags) {
-                etiLog.level(debug) << " TAG " << EdiDecoder::tag_name_to_human_readable(tag.name);
-            }
+            edi::TagPacket edi_tagpacket(0);
+            edi_tagpacket.raw_tagpacket = move(tag_data.tagpacket);
+            edi_sender->write(edi_tagpacket);
         }
 
         int start(int argc, char **argv)
@@ -231,6 +243,8 @@ class Main : public EdiDecoder::ETIDataCollector {
                 return 1;
             }
 
+            edi_sender = make_shared<edi::Sender>(edi_conf);
+
             edi_decoder.set_verbose(edi_conf.verbose);
 
             etiLog.level(info) << "Setting up EDI2EDI with delay " << delay_ms << " ms. " <<
@@ -326,6 +340,8 @@ class Main : public EdiDecoder::ETIDataCollector {
         uint32_t backoff_after_reset_ms = DEFAULT_BACKOFF;
         std::string startupcheck;
         std::string source;
+
+        std::shared_ptr<edi::Sender> edi_sender;
 };
 
 

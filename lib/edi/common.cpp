@@ -130,7 +130,8 @@ std::string tag_name_to_human_readable(const tag_name_t& name)
 
 TagDispatcher::TagDispatcher(
         std::function<void()>&& af_packet_completed) :
-    m_af_packet_completed(move(af_packet_completed))
+    m_af_packet_completed(move(af_packet_completed)),
+    m_tagpacket_handler([](const std::vector<uint8_t>& ignore){})
 {
 }
 
@@ -315,6 +316,11 @@ void TagDispatcher::register_tag(const std::string& tag, tag_handler&& h)
     m_handlers[tag] = move(h);
 }
 
+void TagDispatcher::register_tagpacket_handler(tagpacket_handler&& h)
+{
+    m_tagpacket_handler = move(h);
+}
+
 
 bool TagDispatcher::decode_tagpacket(const vector<uint8_t> &payload)
 {
@@ -364,12 +370,6 @@ bool TagDispatcher::decode_tagpacket(const vector<uint8_t> &payload)
                 found = true;
                 tagsuccess &= tag_handler.second(tag_value, tag_name);
             }
-            else if (tag_handler.first.empty()) {
-                /* Don't set the found flag because we still want to see the warning for
-                 * tags that don't have a specific decoder
-                 */
-                tagsuccess &= tag_handler.second(tag_value, tag_name);
-            }
         }
 
         if (not found) {
@@ -383,6 +383,8 @@ bool TagDispatcher::decode_tagpacket(const vector<uint8_t> &payload)
             break;
         }
     }
+
+    m_tagpacket_handler(payload);
 
     return success;
 }

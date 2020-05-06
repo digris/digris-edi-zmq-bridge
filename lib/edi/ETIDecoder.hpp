@@ -57,13 +57,8 @@ struct eti_stc_data {
     uint16_t stl(void) const { return mst.size() / 8; }
 };
 
-struct ReceivedTag {
-    tag_name_t name;
-    std::vector<uint8_t> tag_data;
-};
-
-struct ReceivedTagData {
-    std::vector<ReceivedTag> all_tags;
+struct ReceivedTagPacket {
+    std::vector<uint8_t> tagpacket;
     frame_timestamp_t timestamp;
 };
 
@@ -100,7 +95,7 @@ class ETIDataCollector {
 
         // Tell the consumer that the AFPacket is complete, and include
         // the raw received TAGs
-        virtual void assemble(ReceivedTagData&& tag_data) = 0;
+        virtual void assemble(ReceivedTagPacket&& tagpacket) = 0;
 };
 
 /* The ETIDecoder takes care of decoding the EDI TAGs related to the transport
@@ -137,14 +132,14 @@ class ETIDecoder {
         bool decode_estn(const std::vector<uint8_t>& value, const tag_name_t& n);
         bool decode_stardmy(const std::vector<uint8_t>& value, const tag_name_t& n);
 
-        bool decode_all(const std::vector<uint8_t>& value, const EdiDecoder::tag_name_t& n);
+        bool decode_tagpacket(const std::vector<uint8_t>& value);
 
         void packet_completed();
 
         ETIDataCollector& m_data_collector;
         TagDispatcher m_dispatcher;
 
-        ReceivedTagData m_received_tag_data;
+        ReceivedTagPacket m_received_tagpacket;
 };
 
 }

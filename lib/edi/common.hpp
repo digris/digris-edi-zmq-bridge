@@ -90,13 +90,16 @@ class TagDispatcher {
 
         /* Handler function for a tag. The first argument contains the tag value,
          * the second argument contains the tag name */
-        using tag_handler = std::function<bool(std::vector<uint8_t>&, const tag_name_t&)>;
+        using tag_handler = std::function<bool(const std::vector<uint8_t>&, const tag_name_t&)>;
 
         /* Register a handler for a tag. If the tag string can be length 0, 1, 2, 3 or 4.
          * If is shorter than 4, it will perform a longest match on the tag name.
-         * If it is empty, it will match all tags.
          */
         void register_tag(const std::string& tag, tag_handler&& h);
+
+        /* The complete tagpacket can also be retrieved */
+        using tagpacket_handler = std::function<void(const std::vector<uint8_t>&)>;
+        void register_tagpacket_handler(tagpacket_handler&& h);
 
     private:
         decode_state_t decode_afpacket(const std::vector<uint8_t> &input_data);
@@ -107,6 +110,7 @@ class TagDispatcher {
         std::vector<uint8_t> m_input_data;
         std::map<std::string, tag_handler> m_handlers;
         std::function<void()> m_af_packet_completed;
+        tagpacket_handler m_tagpacket_handler;
 };
 
 // Data carried inside the ODRv EDI TAG

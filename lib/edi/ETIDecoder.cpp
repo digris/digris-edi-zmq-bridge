@@ -44,8 +44,7 @@ ETIDecoder::ETIDecoder(ETIDataCollector& data_collector) :
             std::bind(&ETIDecoder::decode_estn, this, _1, _2));
     m_dispatcher.register_tag("*dmy",
             std::bind(&ETIDecoder::decode_stardmy, this, _1, _2));
-    m_dispatcher.register_tag("",
-            std::bind(&ETIDecoder::decode_all, this, _1, _2));
+    m_dispatcher.register_tagpacket_handler(std::bind(&ETIDecoder::decode_tagpacket, this, _1));
 }
 
 void ETIDecoder::set_verbose(bool verbose)
@@ -153,8 +152,8 @@ bool ETIDecoder::decode_deti(const std::vector<uint8_t>& value, const tag_name_t
         i += 4;
 
         m_data_collector.update_edi_time(utco, seconds);
-        m_received_tag_data.timestamp.utco = utco;
-        m_received_tag_data.timestamp.seconds = seconds;
+        m_received_tagpacket.timestamp.utco = utco;
+        m_received_tagpacket.timestamp.seconds = seconds;
 
         fc.tsta = read_24b(value.begin() + i);
         i += 3;
@@ -162,11 +161,11 @@ bool ETIDecoder::decode_deti(const std::vector<uint8_t>& value, const tag_name_t
     else {
         // Null timestamp, ETSI ETS 300 799, C.2.2
         fc.tsta = 0xFFFFFF;
-        m_received_tag_data.timestamp.utco = 0;
-        m_received_tag_data.timestamp.seconds = 0;
+        m_received_tagpacket.timestamp.utco = 0;
+        m_received_tagpacket.timestamp.seconds = 0;
     }
 
-    m_received_tag_data.timestamp.tsta = fc.tsta;
+    m_received_tagpacket.timestamp.tsta = fc.tsta;
 
 
     if (fc.ficf) {
@@ -227,18 +226,17 @@ bool ETIDecoder::decode_stardmy(const std::vector<uint8_t>&, const tag_name_t&)
     return true;
 }
 
-bool ETIDecoder::decode_all(const std::vector<uint8_t>& value, const EdiDecoder::tag_name_t& n)
+bool ETIDecoder::decode_tagpacket(const std::vector<uint8_t>& value)
 {
-    ReceivedTag tag{ .name = n, .tag_data = value};
-    m_received_tag_data.all_tags.emplace_back(move(tag));
+    m_received_tagpacket.tagpacket = value;
     return true;
 }
 
 void ETIDecoder::packet_completed()
 {
-    ReceivedTagData td;
-    swap(td, m_received_tag_data);
-    m_data_collector.assemble(move(td));
+    ReceivedTagPacket tp;
+    swap(tp, m_received_tagpacket);
+    m_data_collector.assemble(move(tp));
 }
 
 }
