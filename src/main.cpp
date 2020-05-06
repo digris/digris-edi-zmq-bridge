@@ -5,6 +5,8 @@
     http://www.opendigitalradio.org
  */
 /*
+   This file is part of the ODR-mmbTools.
+
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation, either version 3 of the License, or
@@ -29,6 +31,7 @@
 #include <thread>
 #include <vector>
 #include "Log.h"
+#include "EDISender.h"
 #include "edioutput/TagItems.h"
 #include "edioutput/TagPacket.h"
 #include "edioutput/Transport.h"
@@ -112,12 +115,11 @@ class Main : public EdiDecoder::ETIDataCollector {
         // Tell the ETIWriter that the AFPacket is complete
         virtual void assemble(EdiDecoder::ReceivedTagPacket&& tag_data) override
         {
-            etiLog.level(info) << "Received tagpacket " << tag_data.tagpacket.size() << " bytes at " <<
-                tag_data.timestamp.to_string();
-
-            edi::TagPacket edi_tagpacket(0);
-            edi_tagpacket.raw_tagpacket = move(tag_data.tagpacket);
-            edi_sender->write(edi_tagpacket);
+            tagpacket_t tp;
+            tp.tagpacket = move(tag_data.tagpacket);
+            tp.received_at = std::chrono::steady_clock::now();
+            tp.timestamp = move(tag_data.timestamp);
+            edisender.push_tagpacket(move(tp));
         }
 
         int start(int argc, char **argv)
@@ -243,13 +245,13 @@ class Main : public EdiDecoder::ETIDataCollector {
                 return 1;
             }
 
-            edi_sender = make_shared<edi::Sender>(edi_conf);
-
             edi_decoder.set_verbose(edi_conf.verbose);
 
             etiLog.level(info) << "Setting up EDI2EDI with delay " << delay_ms << " ms. " <<
                 (drop_late_packets ? "Will" : "Will not") << " drop late packets";
 
+            edisender.start(edi_conf, delay_ms, drop_late_packets);
+            edisender.print_configuration();
 
             Socket::TCPSocket sock;
             etiLog.level(info) << "Connecting to TCP " << connect_to_host << ":" << connect_to_port;
@@ -341,7 +343,7 @@ class Main : public EdiDecoder::ETIDataCollector {
         std::string startupcheck;
         std::string source;
 
-        std::shared_ptr<edi::Sender> edi_sender;
+        EDISender edisender;
 };
 
 
