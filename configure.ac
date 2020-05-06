@@ -1,8 +1,8 @@
-# Copyright (C) 2019 Matthias P. Braendli, http://opendigitalradio.org
+# Copyright (C) 2020 Matthias P. Braendli, http://opendigitalradio.org
 
 
 AC_PREREQ(2.69)
-AC_INIT([ODR-EDI2EDI], [0.0.1], [matthias.braendli@mpb.li])
+AC_INIT([ODR-EDI2EDI], [0.1.0], [matthias.braendli@mpb.li])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CANONICAL_SYSTEM
