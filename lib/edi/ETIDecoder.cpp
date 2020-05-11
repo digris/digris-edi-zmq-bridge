@@ -52,7 +52,6 @@ void ETIDecoder::set_verbose(bool verbose)
     m_dispatcher.set_verbose(verbose);
 }
 
-
 void ETIDecoder::push_bytes(const vector<uint8_t> &buf)
 {
     m_dispatcher.push_bytes(buf);
