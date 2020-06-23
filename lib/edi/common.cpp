@@ -67,7 +67,7 @@ time_t frame_timestamp_t::to_unix_epoch() const
     return 946684800 + seconds - utco;
 }
 
-double frame_timestamp_t::diff_ms(const frame_timestamp_t& other) const
+double frame_timestamp_t::diff_s(const frame_timestamp_t& other) const
 {
     const double lhs = (double)seconds + (tsta / 16384000.0);
     const double rhs = (double)other.seconds + (other.tsta / 16384000.0);

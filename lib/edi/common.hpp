@@ -41,7 +41,7 @@ struct frame_timestamp_t {
     std::time_t to_unix_epoch() const;
     std::chrono::system_clock::time_point to_system_clock() const;
 
-    double diff_ms(const frame_timestamp_t& other) const;
+    double diff_s(const frame_timestamp_t& other) const;
 
     frame_timestamp_t& operator+=(const std::chrono::milliseconds& ms);
 
