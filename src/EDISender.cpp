@@ -39,9 +39,10 @@ using namespace std;
 
 EDISender::~EDISender()
 {
-    if (running.load()) {
-        running.store(false);
-        tagpackets.trigger_wakeup();
+    running.store(false);
+    tagpackets.trigger_wakeup();
+
+    if (process_thread.joinable()) {
         process_thread.join();
     }
 }
