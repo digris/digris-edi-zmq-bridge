@@ -124,9 +124,11 @@ void EDISender::process()
             break;
         }
 
+        const uint16_t dflc = tagpacket.dflc;
+        const auto tsta = tagpacket.timestamp.tsta;
         send_tagpacket(tagpacket);
 
-        if (buffering_stats.size() == 250) { // every six seconds
+        if (dflc % 250 == 0) { // every six seconds
             const double n = buffering_stats.size();
 
             size_t num_late = std::count_if(buffering_stats.begin(), buffering_stats.end(),
@@ -173,7 +175,9 @@ void EDISender::process()
                 " stdev: " << stdev <<
                 " late: " <<
                 num_late << " of " << buffering_stats.size() << " (" <<
-                num_late * 100.0 / n << "%)";
+                num_late * 100.0 / n << "%)" <<
+                " Frame 0 TS " << ((double)tsta / 16384.0);
+
 
             buffering_stats.clear();
         }

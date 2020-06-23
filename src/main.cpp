@@ -101,7 +101,10 @@ class Main : public EdiDecoder::ETIDataCollector {
                 uint16_t minor) override { }
 
         // Update the data for the frame characterisation
-        virtual void update_fc_data(const EdiDecoder::eti_fc_data& fc_data) override { }
+        virtual void update_fc_data(const EdiDecoder::eti_fc_data& fc_data) override {
+            dflc = fc_data.dflc;
+        }
+
         virtual void update_fic(std::vector<uint8_t>&& fic) override { }
         virtual void update_err(uint8_t err) override { }
 
@@ -116,6 +119,7 @@ class Main : public EdiDecoder::ETIDataCollector {
         virtual void assemble(EdiDecoder::ReceivedTagPacket&& tag_data) override
         {
             tagpacket_t tp;
+            tp.dflc = dflc;
             tp.tagpacket = move(tag_data.tagpacket);
             tp.received_at = std::chrono::steady_clock::now();
             tp.timestamp = move(tag_data.timestamp);
@@ -344,6 +348,8 @@ class Main : public EdiDecoder::ETIDataCollector {
         std::string source;
 
         EDISender edisender;
+
+        uint16_t dflc = 0;
 };
 
 

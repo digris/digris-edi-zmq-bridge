@@ -57,7 +57,7 @@ late.warning 0:0
 
 def parse_logs():
     # example lines:
-    #  Buffering time statistics [milliseconds]: min: 907.799 max: 981.409 mean: 944.335 stdev: 26.827 late: 0 of 250 (0%)
+    #  Buffering time statistics [milliseconds]: min: 907.799 max: 981.409 mean: 944.335 stdev: 26.827 late: 0 of 250 (0%) Frame 0 TS 694
     # Values might also be in scientific form, e.g. -1.80938e+07
     re_logline = re.compile(r"""Buffering time statistics.* min: (.+) max: (.+) mean: (.+) stdev: (.+) late: (.+) of 250""", flags=re.ASCII)
 
