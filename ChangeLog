@@ -1,6 +1,14 @@
 This file contains information about the changes done to
 ODR-EDI2EDI in this repository
 
+2020-09-23: Matthias P. Braendli <matthias@mpb.li>
+	(v0.2.0):
+		Mostly minor fixes
+
+2020-05-06: Matthias P. Braendli <matthias@mpb.li>
+	(v0.1.0):
+		First working version
+
 2020-04-28: Matthias P. Braendli <matthias@mpb.li>
 	(v0.0.1):
 		Project creation
