@@ -56,31 +56,32 @@ void signal_handler(int signum)
 
 static void usage()
 {
-    cerr << "Usage:" << endl;
-    cerr << "odr-edi2edi [options] -c <source>" << endl << endl;
+    cerr << "\nUsage:\n";
+    cerr << "odr-edi2edi [options] -c <source>\n\n";
 
-    cerr << "Options:" << endl;
-    cerr << "The following options can be given only once:" << endl;
-    cerr << " -c <host:port>        Connect to given host and port using TCP." << endl;
-    cerr << " -w <delay>            Keep every ETI frame until TIST is <delay> milliseconds after current system time." << endl;
-    cerr << "                       Negative delay values are also allowed." << endl;
-    cerr << " -C <path to script>   Before starting, run the given script, and only start if it returns 0." << endl;
-    cerr << "                       This is useful for checking that NTP is properly synchronised" << endl;
-    cerr << " -x                    Drop frames where for which the wait time would be negative, i.e. frames that arrived too late." << endl;
-    cerr << " -p <destination port> Set the destination port." << endl;
-    cerr << " -P                    Disable PFT and send AFPackets." << endl;
-    cerr << " -f <fec>              Set the FEC." << endl;
-    cerr << " -i <interleave>       Enable the interleaver with this latency." << endl;
-    cerr << " -D                    Dump the EDI to edi.debug file." << endl;
-    cerr << " -v                    Enables verbose mode." << endl;
-    cerr << " -a <alignement>       Set the alignment of the TAG Packet (default 8)." << endl;
-    cerr << " -b <backoff>          Number of milliseconds to backoff after an input reset (default " << DEFAULT_BACKOFF << ")." << endl << endl;
+    cerr << "Options:\n";
+    cerr << "The following options can be given only once:\n";
+    cerr << " -c <host:port>        Connect to given host and port using TCP.\n";
+    cerr << " -w <delay>            Keep every ETI frame until TIST is <delay> milliseconds after current system time.\n";
+    cerr << "                       Negative delay values are also allowed.\n";
+    cerr << " -C <path to script>   Before starting, run the given script, and only start if it returns 0.\n";
+    cerr << "                       This is useful for checking that NTP is properly synchronised\n";
+    cerr << " -x                    Drop frames where for which the wait time would be negative, i.e. frames that arrived too late.\n";
+    cerr << " -p <destination port> Set the destination port.\n";
+    cerr << " -P                    Disable PFT and send AFPackets.\n";
+    cerr << " -f <fec>              Set the FEC.\n";
+    cerr << " -i <interleave>       Enable the interleaver with this latency.\n";
+    cerr << " -D                    Dump the EDI to edi.debug file.\n";
+    cerr << " -v                    Enables verbose mode.\n";
+    cerr << " -a <alignement>       Set the alignment of the TAG Packet (default 8).\n";
+    cerr << " -b <backoff>          Number of milliseconds to backoff after an input reset (default " << DEFAULT_BACKOFF << ").\n";
+    cerr << " --version             Show the version and quit.\n\n";
 
-    cerr << "The following options can be given several times, when more than UDP destination is desired:" << endl;
-    cerr << " -d <destination ip>   Set the destination ip." << endl;
-    cerr << " -s <source port>      Set the source port." << endl;
-    cerr << " -S <source ip>        Select the source IP in case we want to use multicast." << endl;
-    cerr << " -t <ttl>              Set the packet's TTL." << endl << endl;
+    cerr << "The following options can be given several times, when more than UDP destination is desired:\n";
+    cerr << " -d <destination ip>   Set the destination ip.\n";
+    cerr << " -s <source port>      Set the source port.\n";
+    cerr << " -S <source ip>        Select the source IP in case we want to use multicast.\n";
+    cerr << " -t <ttl>              Set the packet's TTL.\n\n";
 
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
 }
@@ -138,7 +139,7 @@ class Main : public EdiDecoder::ETIDataCollector {
         {
             edi_conf.enable_pft = true;
 
-            if (argc == 0) {
+            if (argc == 1) {
                 usage();
                 return 1;
             }
@@ -394,13 +395,25 @@ class Main : public EdiDecoder::ETIDataCollector {
 
 int main(int argc, char **argv)
 {
-    etiLog.level(info) << "ODR-EDI2EDI " <<
+    // Version handling is done very early to ensure nothing else but the version gets printed out
+    if (argc == 2 and strcmp(argv[1], "--version") == 0) {
+        fprintf(stdout, "%s\n",
+#if defined(GITVERSION)
+                GITVERSION
+#else
+                PACKAGE_VERSION
+#endif
+               );
+        return 0;
+    }
+
+    cerr << "ODR-EDI2EDI " <<
 #if defined(GITVERSION)
         GITVERSION <<
 #else
         PACKAGE_VERSION <<
 #endif
-        " starting up";
+        " starting up" << endl;
 
     int ret = 1;
 
