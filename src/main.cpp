@@ -21,15 +21,16 @@
    along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <getopt.h>
-#include <cmath>
-#include <cstring>
 #include <chrono>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <thread>
 #include <vector>
+#include <cmath>
+#include <cstring>
+#include <signal.h>
+#include <getopt.h>
 #include "Log.h"
 #include "EDISender.h"
 #include "edioutput/TagItems.h"
@@ -40,6 +41,18 @@
 using namespace std;
 
 constexpr long DEFAULT_BACKOFF = 5000;
+
+volatile sig_atomic_t running = 1;
+
+void signal_handler(int signum)
+{
+    if (signum == SIGTERM) {
+        fprintf(stderr, "Received SIGTERM\n");
+        exit(0);
+    }
+    //killpg(0, SIGPIPE);
+    running = 0;
+}
 
 static void usage()
 {
@@ -89,10 +102,6 @@ class ReceivedTagItem : public edi::TagItem {
 
 class Main : public EdiDecoder::ETIDataCollector {
     public:
-        Main() : edi_decoder(*this)
-        {
-        }
-
         // Tell the ETIWriter what EDI protocol we receive in *ptr.
         // This is not part of the ETI data, but is used as check
         virtual void update_protocol(
@@ -105,11 +114,10 @@ class Main : public EdiDecoder::ETIDataCollector {
             dflc = fc_data.dflc;
         }
 
+        // Ignore most events because we are interested in retransmitting EDI, not
+        // decoding it
         virtual void update_fic(std::vector<uint8_t>&& fic) override { }
         virtual void update_err(uint8_t err) override { }
-
-        // In addition to TSTA in ETI, EDI also transports more time
-        // stamp information.
         virtual void update_edi_time(uint32_t utco, uint32_t seconds) override { }
         virtual void update_mnsc(uint16_t mnsc) override { }
         virtual void update_rfu(uint16_t rfu) override { }
@@ -249,36 +257,68 @@ class Main : public EdiDecoder::ETIDataCollector {
                 return 1;
             }
 
-            edi_decoder.set_verbose(edi_conf.verbose);
-
             etiLog.level(info) << "Setting up EDI2EDI with delay " << delay_ms << " ms. " <<
                 (drop_late_packets ? "Will" : "Will not") << " drop late packets";
 
             edisender.start(edi_conf, delay_ms, drop_late_packets);
             edisender.print_configuration();
 
-            Socket::TCPSocket sock;
-            etiLog.level(info) << "Connecting to TCP " << connect_to_host << ":" << connect_to_port;
-            sock.connect(connect_to_host, connect_to_port);
+            try {
+                while (running) {
+                    EdiDecoder::ETIDecoder edi_decoder(*this);
 
-            ssize_t ret = 0;
-            do {
-                const size_t bufsize = 32;
-                std::vector<uint8_t> buf(bufsize);
-                ret = sock.recv(buf.data(), buf.size(), 0);
-                if (ret > 0) {
-                    buf.resize(ret);
-                    std::vector<uint8_t> frame;
-                    edi_decoder.push_bytes(buf);
+                    edi_decoder.set_verbose(edi_conf.verbose);
+                    run(edi_decoder, connect_to_host, connect_to_port);
+                    if (not running) {
+                        break;
+                    }
+                    etiLog.level(info) << "Source disconnected, backoff " << backoff_after_reset_ms << "ms...";
+
+                    // There is no state inside the edisender or inside Main that we need to
+                    // clear.
+
+                    this_thread::sleep_for(chrono::milliseconds(backoff_after_reset_ms));
                 }
-            } while (ret > 0);
+            }
+            catch (const std::runtime_error& e) {
+                etiLog.level(error) << "Caught exception: " << e.what();
+                return 1;
+            }
 
             return 0;
         }
 
     private:
+        void run(EdiDecoder::ETIDecoder& edi_decoder, const string& connect_to_host, int connect_to_port)
+        {
+            Socket::TCPSocket sock;
+            etiLog.level(info) << "Connecting to TCP " << connect_to_host << ":" << connect_to_port;
+            try {
+                sock.connect(connect_to_host, connect_to_port);
+            }
+            catch (const std::runtime_error& e) {
+                etiLog.level(error) << "Error connecting to source: " << e.what();
+                return;
+            }
 
-        void add_edi_destination(void)
+            ssize_t ret = 0;
+            do {
+                const size_t bufsize = 32;
+                std::vector<uint8_t> buf(bufsize);
+                try {
+                    ret = sock.recv(buf.data(), buf.size(), 0);
+                    if (ret > 0) {
+                        buf.resize(ret);
+                        std::vector<uint8_t> frame;
+                        edi_decoder.push_bytes(buf);
+                    }
+                }
+                catch (const Socket::TCPSocket::Interrupted&) {
+                }
+            } while (running and ret > 0);
+        }
+
+        void add_edi_destination()
         {
             if (not dest_addr_set) {
                 throw std::runtime_error("Destination address not specified for destination number " +
@@ -340,7 +380,6 @@ class Main : public EdiDecoder::ETIDataCollector {
         bool ttl_set = false;
         bool dest_addr_set = false;
         edi::configuration_t edi_conf;
-        EdiDecoder::ETIDecoder edi_decoder;
         int delay_ms = 500;
         bool drop_late_packets = false;
         uint32_t backoff_after_reset_ms = DEFAULT_BACKOFF;
@@ -364,6 +403,18 @@ int main(int argc, char **argv)
         " starting up";
 
     int ret = 1;
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(struct sigaction));
+    sa.sa_handler = &signal_handler;
+
+    const int sigs[] = {SIGHUP, SIGQUIT, SIGINT, SIGTERM};
+    for (int sig : sigs) {
+        if (sigaction(sig, &sa, nullptr) == -1) {
+            perror("sigaction");
+            return EXIT_FAILURE;
+        }
+    }
 
     try {
         Main m;
