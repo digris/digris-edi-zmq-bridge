@@ -69,6 +69,7 @@ static void usage()
     cerr << " -x                    Drop frames where for which the wait time would be negative, i.e. frames that arrived too late.\n";
     cerr << " -p <destination port> Set the destination port.\n";
     cerr << " -P                    Disable PFT and send AFPackets.\n";
+    cerr << " -A                    Disable Transport Addressing in PFT.\n";
     cerr << " -f <fec>              Set the FEC.\n";
     cerr << " -i <interleave>       Enable the interleaver with this latency.\n";
     cerr << " -D                    Dump the EDI to edi.debug file.\n";
@@ -146,9 +147,12 @@ class Main : public EdiDecoder::ETIDataCollector {
 
             int ch = 0;
             while (ch != -1) {
-                ch = getopt(argc, argv, "c:C:d:p:s:S:t:Pf:i:Dva:b:w:xh");
+                ch = getopt(argc, argv, "Ac:C:d:p:s:S:t:Pf:i:Dva:b:w:xh");
                 switch (ch) {
                     case -1:
+                        break;
+                    case 'A':
+                        edi_conf.enable_transport_header = false;
                         break;
                     case 'c':
                         source = optarg;
