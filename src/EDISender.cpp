@@ -124,11 +124,11 @@ void EDISender::process()
             break;
         }
 
-        const uint16_t dflc = tagpacket.dflc;
+        const uint16_t dlfc = tagpacket.dlfc;
         const auto tsta = tagpacket.timestamp.tsta;
         send_tagpacket(tagpacket);
 
-        if (dflc % 250 == 0) { // every six seconds
+        if (dlfc % 250 == 0) { // every six seconds
             const double n = buffering_stats.size();
 
             size_t num_late = std::count_if(buffering_stats.begin(), buffering_stats.end(),

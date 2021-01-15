@@ -40,7 +40,7 @@
 
 
 struct tagpacket_t {
-    uint16_t dflc;
+    uint16_t dlfc;
     std::vector<uint8_t> tagpacket;
     EdiDecoder::frame_timestamp_t timestamp;
     std::chrono::steady_clock::time_point received_at;

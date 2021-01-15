@@ -67,9 +67,7 @@ static void usage()
     cerr << " -C <path to script>   Before starting, run the given script, and only start if it returns 0.\n";
     cerr << "                       This is useful for checking that NTP is properly synchronised\n";
     cerr << " -x                    Drop frames where for which the wait time would be negative, i.e. frames that arrived too late.\n";
-    cerr << " -p <destination port> Set the destination port.\n";
     cerr << " -P                    Disable PFT and send AFPackets.\n";
-    cerr << " -A                    Disable Transport Addressing in PFT.\n";
     cerr << " -f <fec>              Set the FEC.\n";
     cerr << " -i <interleave>       Enable the interleaver with this latency.\n";
     cerr << " -D                    Dump the EDI to edi.debug file.\n";
@@ -79,6 +77,7 @@ static void usage()
     cerr << " --version             Show the version and quit.\n\n";
 
     cerr << "The following options can be given several times, when more than UDP destination is desired:\n";
+    cerr << " -p <destination port> Set the destination port.\n";
     cerr << " -d <destination ip>   Set the destination ip.\n";
     cerr << " -s <source port>      Set the source port.\n";
     cerr << " -S <source ip>        Select the source IP in case we want to use multicast.\n";
@@ -113,7 +112,7 @@ class Main : public EdiDecoder::ETIDataCollector {
 
         // Update the data for the frame characterisation
         virtual void update_fc_data(const EdiDecoder::eti_fc_data& fc_data) override {
-            dflc = fc_data.dflc;
+            dlfc = fc_data.dlfc;
         }
 
         // Ignore most events because we are interested in retransmitting EDI, not
@@ -129,7 +128,7 @@ class Main : public EdiDecoder::ETIDataCollector {
         virtual void assemble(EdiDecoder::ReceivedTagPacket&& tag_data) override
         {
             tagpacket_t tp;
-            tp.dflc = dflc;
+            tp.dlfc = dlfc;
             tp.tagpacket = move(tag_data.tagpacket);
             tp.received_at = std::chrono::steady_clock::now();
             tp.timestamp = move(tag_data.timestamp);
@@ -147,12 +146,9 @@ class Main : public EdiDecoder::ETIDataCollector {
 
             int ch = 0;
             while (ch != -1) {
-                ch = getopt(argc, argv, "Ac:C:d:p:s:S:t:Pf:i:Dva:b:w:xh");
+                ch = getopt(argc, argv, "c:C:d:p:s:S:t:Pf:i:Dva:b:w:xh");
                 switch (ch) {
                     case -1:
-                        break;
-                    case 'A':
-                        edi_conf.enable_transport_header = false;
                         break;
                     case 'c':
                         source = optarg;
@@ -164,10 +160,8 @@ class Main : public EdiDecoder::ETIDataCollector {
                     case 's':
                     case 'S':
                     case 't':
-                        parse_destination_args(ch);
-                        break;
                     case 'p':
-                        edi_conf.dest_port = std::stoi(optarg);
+                        parse_destination_args(ch);
                         break;
                     case 'P':
                         edi_conf.enable_pft = false;
@@ -252,11 +246,6 @@ class Main : public EdiDecoder::ETIDataCollector {
             const string connect_to_host = source.substr(0, pos_colon);
             const int connect_to_port = stod(source.substr(pos_colon+1));
 
-            if (edi_conf.dest_port == 0) {
-                etiLog.level(error) << "No EDI destination port defined";
-                return 1;
-            }
-
             if (edi_conf.destinations.empty()) {
                 etiLog.level(error) << "No EDI destinations set";
                 return 1;
@@ -337,6 +326,7 @@ class Main : public EdiDecoder::ETIDataCollector {
             source_addr_set = false;
             ttl_set = false;
             dest_addr_set = false;
+            dest_port_set = false;
         }
 
         void parse_destination_args(char option)
@@ -346,6 +336,13 @@ class Main : public EdiDecoder::ETIDataCollector {
             }
 
             switch (option) {
+                case 'p':
+                    if (dest_port_set) {
+                        add_edi_destination();
+                    }
+                    edi_destination->dest_port = std::stoi(optarg);
+                    dest_port_set = true;
+                    break;
                 case 's':
                     if (source_port_set) {
                         add_edi_destination();
@@ -384,6 +381,7 @@ class Main : public EdiDecoder::ETIDataCollector {
         bool source_addr_set = false;
         bool ttl_set = false;
         bool dest_addr_set = false;
+        bool dest_port_set = false;
         edi::configuration_t edi_conf;
         int delay_ms = 500;
         bool drop_late_packets = false;
@@ -393,7 +391,7 @@ class Main : public EdiDecoder::ETIDataCollector {
 
         EDISender edisender;
 
-        uint16_t dflc = 0;
+        uint16_t dlfc = 0;
 };
 
 
