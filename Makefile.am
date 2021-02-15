@@ -31,8 +31,6 @@ odr_edi2edi_SOURCES  = src/main.cpp \
 					   lib/edioutput/AFPacket.cpp \
 					   lib/edioutput/AFPacket.h \
 					   lib/edioutput/EDIConfig.h \
-					   lib/edioutput/Interleaver.cpp \
-					   lib/edioutput/Interleaver.h \
 					   lib/edioutput/PFT.cpp \
 					   lib/edioutput/PFT.h \
 					   lib/edioutput/TagItems.cpp \

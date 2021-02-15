@@ -69,7 +69,7 @@ static void usage()
     cerr << " -x                    Drop frames where for which the wait time would be negative, i.e. frames that arrived too late.\n";
     cerr << " -P                    Disable PFT and send AFPackets.\n";
     cerr << " -f <fec>              Set the FEC.\n";
-    cerr << " -i <interleave>       Enable the interleaver with this latency.\n";
+    cerr << " -i <interleave>       Configure the interleaver with given interleave percentage: 0% send all fragments at once, 100% spread over 24ms, >100% spread and interleave. Default 95%\n";
     cerr << " -D                    Dump the EDI to edi.debug file.\n";
     cerr << " -v                    Enables verbose mode.\n";
     cerr << " -a <alignement>       Set the alignment of the TAG Packet (default 8).\n";
@@ -171,18 +171,13 @@ class Main : public EdiDecoder::ETIDataCollector {
                         break;
                     case 'i':
                         {
-                            double interleave_ms = std::stod(optarg);
-                            if (interleave_ms != 0.0) {
-                                if (interleave_ms < 0) {
+                            int interleave_percent = std::stoi(optarg);
+                            if (interleave_percent != 0) {
+                                if (interleave_percent < 0) {
                                     throw std::runtime_error("EDI output: negative interleave value is invalid.");
                                 }
 
-                                auto latency_rounded = lround(interleave_ms / 24.0);
-                                if (latency_rounded * 24 > 30000) {
-                                    throw std::runtime_error("EDI output: interleaving set for more than 30 seconds!");
-                                }
-
-                                edi_conf.latency_frames = latency_rounded;
+                                edi_conf.fragment_spreading_factor = (double)interleave_percent / 100.0;
                             }
                         }
                         break;

@@ -31,9 +31,10 @@
 #include "EDIConfig.h"
 #include "AFPacket.h"
 #include "PFT.h"
-#include "Interleaver.h"
 #include "Socket.h"
 #include <vector>
+#include <chrono>
+#include <map>
 #include <unordered_map>
 #include <stdexcept>
 #include <fstream>
@@ -61,12 +62,11 @@ class Sender {
         // The AF Packet will be protected with reed-solomon and split in fragments
         edi::PFT edi_pft;
 
-        // To mitigate for burst packet loss, PFT fragments can be sent out-of-order
-        edi::Interleaver edi_interleaver;
-
         std::unordered_map<udp_destination_t*, std::shared_ptr<Socket::UDPSocket>> udp_sockets;
         std::unordered_map<tcp_server_t*, std::shared_ptr<Socket::TCPDataDispatcher>> tcp_dispatchers;
         std::unordered_map<tcp_client_t*, std::shared_ptr<Socket::TCPSendClient>> tcp_senders;
+
+        std::map<std::chrono::steady_clock::time_point, edi::PFTFragment> m_pending_frames;
 };
 
 }
