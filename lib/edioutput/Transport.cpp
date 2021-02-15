@@ -27,6 +27,7 @@
 #include "Transport.h"
 #include <iterator>
 #include <cmath>
+#include <thread>
 
 using namespace std;
 
@@ -97,8 +98,26 @@ Sender::Sender(const configuration_t& conf) :
         edi_debug_file.open("./edi.debug");
     }
 
+    if (m_conf.enable_pft) {
+        unique_lock<mutex> lock(m_mutex);
+        m_running = true;
+        m_thread = thread(&Sender::run, this);
+    }
+
     if (m_conf.verbose) {
         etiLog.log(info, "EDI output set up");
+    }
+}
+
+Sender::~Sender()
+{
+    {
+        unique_lock<mutex> lock(m_mutex);
+        m_running = false;
+    }
+
+    if (m_thread.joinable()) {
+        m_thread.join();
     }
 }
 
@@ -128,11 +147,55 @@ void Sender::write(const TagPacket& tagpacket)
 
         /* Separate insertion into map and transmission so as to make spreading possible */
         const auto now = steady_clock::now();
-        auto tp = now;
-        for (auto& edi_frag : edi_fragments) {
-            m_pending_frames[tp] = move(edi_frag);
-            tp += inter_fragment_wait_time;
+        {
+            auto tp = now;
+            unique_lock<mutex> lock(m_mutex);
+            for (auto& edi_frag : edi_fragments) {
+                m_pending_frames[tp] = move(edi_frag);
+                tp += inter_fragment_wait_time;
+            }
         }
+
+        // Transmission done in run() function
+    }
+    else /* PFT disabled */ {
+        // Send over ethernet
+        if (m_conf.dump) {
+            ostream_iterator<uint8_t> debug_iterator(edi_debug_file);
+            copy(af_packet.begin(), af_packet.end(), debug_iterator);
+        }
+
+        for (auto& dest : m_conf.destinations) {
+            if (const auto& udp_dest = dynamic_pointer_cast<edi::udp_destination_t>(dest)) {
+                Socket::InetAddress addr;
+                addr.resolveUdpDestination(udp_dest->dest_addr, udp_dest->dest_port);
+
+                if (af_packet.size() > 1400 and not m_udp_fragmentation_warning_printed) {
+                    fprintf(stderr, "EDI Output: AF packet larger than 1400,"
+                            " consider using PFT to avoid UP fragmentation.\n");
+                    m_udp_fragmentation_warning_printed = true;
+                }
+
+                udp_sockets.at(udp_dest.get())->send(af_packet, addr);
+            }
+            else if (auto tcp_dest = dynamic_pointer_cast<edi::tcp_server_t>(dest)) {
+                tcp_dispatchers.at(tcp_dest.get())->write(af_packet);
+            }
+            else if (auto tcp_dest = dynamic_pointer_cast<edi::tcp_client_t>(dest)) {
+                tcp_senders.at(tcp_dest.get())->sendall(af_packet);
+            }
+            else {
+                throw logic_error("EDI destination not implemented");
+            }
+        }
+    }
+}
+
+void Sender::run()
+{
+    while (m_running) {
+        unique_lock<mutex> lock(m_mutex);
+        const auto now = chrono::steady_clock::now();
 
         // Send over ethernet
         for (auto it = m_pending_frames.begin(); it != m_pending_frames.end(); ) {
@@ -167,37 +230,9 @@ void Sender::write(const TagPacket& tagpacket)
                 ++it;
             }
         }
-    }
-    else /* PFT disabled */ {
-        // Send over ethernet
-        if (m_conf.dump) {
-            ostream_iterator<uint8_t> debug_iterator(edi_debug_file);
-            copy(af_packet.begin(), af_packet.end(), debug_iterator);
-        }
 
-        for (auto& dest : m_conf.destinations) {
-            if (const auto& udp_dest = dynamic_pointer_cast<edi::udp_destination_t>(dest)) {
-                Socket::InetAddress addr;
-                addr.resolveUdpDestination(udp_dest->dest_addr, udp_dest->dest_port);
-
-                if (af_packet.size() > 1400 and not m_udp_fragmentation_warning_printed) {
-                    fprintf(stderr, "EDI Output: AF packet larger than 1400,"
-                            " consider using PFT to avoid UP fragmentation.\n");
-                    m_udp_fragmentation_warning_printed = true;
-                }
-
-                udp_sockets.at(udp_dest.get())->send(af_packet, addr);
-            }
-            else if (auto tcp_dest = dynamic_pointer_cast<edi::tcp_server_t>(dest)) {
-                tcp_dispatchers.at(tcp_dest.get())->write(af_packet);
-            }
-            else if (auto tcp_dest = dynamic_pointer_cast<edi::tcp_client_t>(dest)) {
-                tcp_senders.at(tcp_dest.get())->sendall(af_packet);
-            }
-            else {
-                throw logic_error("EDI destination not implemented");
-            }
-        }
+        lock.unlock();
+        this_thread::sleep_for(chrono::microseconds(500));
     }
 }
 
