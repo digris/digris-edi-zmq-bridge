@@ -295,7 +295,7 @@ class Main : public EdiDecoder::ETIDataCollector {
                 const size_t bufsize = 32;
                 std::vector<uint8_t> buf(bufsize);
                 try {
-                    ret = sock.recv(buf.data(), buf.size(), 0);
+                    ret = sock.recv(buf.data(), buf.size(), 0, 8000);
                     if (ret > 0) {
                         buf.resize(ret);
                         std::vector<uint8_t> frame;
@@ -303,6 +303,9 @@ class Main : public EdiDecoder::ETIDataCollector {
                     }
                 }
                 catch (const Socket::TCPSocket::Interrupted&) {
+                }
+                catch (const Socket::TCPSocket::Timeout&) {
+                    ret = 0;
                 }
             } while (running and ret > 0);
         }
