@@ -44,6 +44,7 @@ struct tagpacket_t {
     std::vector<uint8_t> tagpacket;
     EdiDecoder::frame_timestamp_t timestamp;
     std::chrono::steady_clock::time_point received_at;
+    EdiDecoder::seq_info_t seq;
 };
 
 class EDISender {

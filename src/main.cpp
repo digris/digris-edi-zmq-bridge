@@ -116,6 +116,7 @@ class Main : public EdiDecoder::ETIDataCollector {
         virtual void assemble(EdiDecoder::ReceivedTagPacket&& tag_data) override
         {
             tagpacket_t tp;
+            tp.seq = tag_data.seq;
             tp.dlfc = dlfc;
             tp.tagpacket = move(tag_data.tagpacket);
             tp.received_at = std::chrono::steady_clock::now();

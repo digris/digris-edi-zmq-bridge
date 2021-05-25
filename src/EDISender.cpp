@@ -104,6 +104,20 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
 
     if (edi_sender and edi_conf.enabled()) {
         edi::TagPacket edi_tagpacket(0);
+
+        if (tp.seq.seq_valid) {
+            edi_sender->override_af_sequence(tp.seq.seq);
+        }
+
+        if (tp.seq.pseq_valid) {
+            edi_sender->override_pft_sequence(tp.seq.pseq);
+        }
+        else if (tp.seq.seq_valid) {
+            // If the source isn't using PFT, set PSEQ = SEQ so that multihoming
+            // with several EDI2EDI instances could work.
+            edi_sender->override_pft_sequence(tp.seq.seq);
+        }
+
         edi_tagpacket.raw_tagpacket = move(tp.tagpacket);
         edi_sender->write(edi_tagpacket);
     }
