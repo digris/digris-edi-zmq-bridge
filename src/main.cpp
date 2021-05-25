@@ -89,18 +89,6 @@ static void usage()
 /* There is some state inside the parsing of destination arguments,
  * because several destinations can be given.  */
 
-class ReceivedTagItem : public edi::TagItem {
-    public:
-        ReceivedTagItem(const EdiDecoder::ReceivedTagPacket& rt) : m_rt(rt) { }
-
-        virtual std::vector<uint8_t> Assemble() override {
-            return m_rt.tagpacket;
-        }
-
-    private:
-        const EdiDecoder::ReceivedTagPacket& m_rt;
-};
-
 class Main : public EdiDecoder::ETIDataCollector {
     public:
         // Tell the ETIWriter what EDI protocol we receive in *ptr.
