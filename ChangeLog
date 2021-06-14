@@ -1,6 +1,12 @@
 This file contains information about the changes done to
 ODR-EDI2EDI in this repository
 
+2021-06-14: Matthias P. Braendli <matthias@mpb.li>
+	(v0.4.0):
+		Fix UDP output packet spreading.
+		Add -A option.
+		Pull in lots of changes from common code.
+
 2020-10-28: Matthias P. Braendli <matthias@mpb.li>
 	(v0.3.0):
 		Automatically reconnect to source
