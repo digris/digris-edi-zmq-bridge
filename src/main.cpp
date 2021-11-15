@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2020
+   Copyright (C) 2021
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -180,7 +180,7 @@ class Main : public EdiDecoder::ETIDataCollector {
                         edi_conf.tagpacket_alignment = std::stoi(optarg);
                         break;
                     case 'b':
-                        backoff_after_reset_ms = std::stoi(optarg);
+                        backoff = std::chrono::milliseconds(std::stoi(optarg));
                         break;
                     case 'w':
                         delay_ms = std::stoi(optarg);
@@ -250,12 +250,11 @@ class Main : public EdiDecoder::ETIDataCollector {
                     if (not running) {
                         break;
                     }
-                    etiLog.level(info) << "Source disconnected, backoff " << backoff_after_reset_ms << "ms...";
+                    etiLog.level(info) << "Source disconnected, reconnecting and enabling output inhibit backoff";
+                    edisender.inhibit_until(chrono::steady_clock::now() + backoff);
 
                     // There is no state inside the edisender or inside Main that we need to
                     // clear.
-
-                    this_thread::sleep_for(chrono::milliseconds(backoff_after_reset_ms));
                 }
             }
             catch (const std::runtime_error& e) {
@@ -372,7 +371,7 @@ class Main : public EdiDecoder::ETIDataCollector {
         edi::configuration_t edi_conf;
         int delay_ms = 500;
         bool drop_late_packets = false;
-        uint32_t backoff_after_reset_ms = DEFAULT_BACKOFF;
+        std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
         std::string startupcheck;
         std::string source;
 

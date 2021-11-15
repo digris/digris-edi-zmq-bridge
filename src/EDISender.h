@@ -3,7 +3,7 @@
    2011, 2012 Her Majesty the Queen in Right of Canada (Communications
    Research Center Canada)
 
-   Copyright (C) 2020
+   Copyright (C) 2021
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -58,9 +58,13 @@ class EDISender {
         void push_tagpacket(tagpacket_t&& tagpacket);
         void print_configuration(void);
 
+        void inhibit_until(std::chrono::steady_clock::time_point tp);
+
     private:
         void send_tagpacket(tagpacket_t& frame);
         void process(void);
+
+        std::chrono::steady_clock::time_point output_inhibit_until = std::chrono::steady_clock::now();
 
         int tist_delay_ms;
         bool drop_late;
@@ -75,6 +79,7 @@ class EDISender {
             // Time between when we received the packets and when we transmit packets, in microseconds
             double buffering_time_us = 0.0;
             bool late = false;
+            bool inhibited = false;
         };
         std::vector<buffering_stat_t> buffering_stats;
 

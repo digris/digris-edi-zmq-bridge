@@ -30,6 +30,7 @@
 #include "ThreadsafeQueue.h"
 #include <cmath>
 #include <cstring>
+#include <iomanip>
 #include <numeric>
 #include <map>
 #include <algorithm>
@@ -74,6 +75,11 @@ void EDISender::print_configuration()
     }
 }
 
+void EDISender::inhibit_until(std::chrono::steady_clock::time_point tp)
+{
+    output_inhibit_until = tp;
+}
+
 void EDISender::send_tagpacket(tagpacket_t& tp)
 {
     // Wait until our time is tist_delay after the TIST before
@@ -95,10 +101,17 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
         std::this_thread::sleep_for(wait_time);
     }
 
-    stat.buffering_time_us = duration_cast<microseconds>(steady_clock::now() - tp.received_at).count();
+    const auto t_now_steady = steady_clock::now();
+    stat.inhibited = t_now_steady < output_inhibit_until;
+
+    stat.buffering_time_us = duration_cast<microseconds>(t_now_steady - tp.received_at).count();
     buffering_stats.push_back(std::move(stat));
 
     if (late and drop_late) {
+        return;
+    }
+
+    if (stat.inhibited) {
         return;
     }
 
@@ -148,6 +161,9 @@ void EDISender::process()
             size_t num_late = std::count_if(buffering_stats.begin(), buffering_stats.end(),
                     [](const buffering_stat_t& s){ return s.late; });
 
+            size_t num_inhibited = std::count_if(buffering_stats.begin(), buffering_stats.end(),
+                    [](const buffering_stat_t& s){ return s.inhibited; });
+
             double sum = 0.0;
             double min = std::numeric_limits<double>::max();
             double max = -std::numeric_limits<double>::max();
@@ -189,7 +205,11 @@ void EDISender::process()
                 " stdev: " << stdev <<
                 " late: " <<
                 num_late << " of " << buffering_stats.size() << " (" <<
+                std::setprecision(3) <<
                 num_late * 100.0 / n << "%)" <<
+                " inhibited: " <<
+                num_inhibited << " of " << buffering_stats.size() << " (" <<
+                num_inhibited * 100.0 / n << "%)" <<
                 " Frame 0 TS " << ((double)tsta / 16384.0);
 
 
