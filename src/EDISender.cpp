@@ -40,35 +40,40 @@ using namespace std;
 
 EDISender::~EDISender()
 {
-    running.store(false);
-    tagpackets.trigger_wakeup();
+    _running.store(false);
+    _tagpackets.trigger_wakeup();
 
-    if (process_thread.joinable()) {
-        process_thread.join();
+    if (_process_thread.joinable()) {
+        _process_thread.join();
     }
 }
 
-void EDISender::start(const edi::configuration_t& conf, int delay_ms, bool drop_late_packets)
+void EDISender::start(
+        const edi::configuration_t& conf,
+        int delay_ms,
+        bool drop_late,
+        int drop_delay_ms)
 {
-    edi_conf = conf;
-    tist_delay_ms = delay_ms;
-    drop_late = drop_late_packets;
+    _edi_conf = conf;
+    _delay_ms = delay_ms;
+    _drop_late = drop_late;
+    _drop_delay_ms = drop_delay_ms;
 
-    edi_sender = make_shared<edi::Sender>(edi_conf);
+    _edi_sender = make_shared<edi::Sender>(_edi_conf);
 
-    running.store(true);
-    process_thread = thread(&EDISender::process, this);
+    _running.store(true);
+    _process_thread = thread(&EDISender::process, this);
 }
 
 void EDISender::push_tagpacket(tagpacket_t&& tp)
 {
-    tagpackets.push(move(tp));
+    _tagpackets.push(move(tp));
 }
 
 void EDISender::print_configuration()
 {
-    if (edi_conf.enabled()) {
-        edi_conf.print();
+    if (_edi_conf.enabled()) {
+        _edi_conf.print();
     }
     else {
         etiLog.level(info) << "EDI disabled";
@@ -77,7 +82,7 @@ void EDISender::print_configuration()
 
 void EDISender::inhibit_until(std::chrono::steady_clock::time_point tp)
 {
-    output_inhibit_until = tp;
+    _output_inhibit_until = tp;
 }
 
 void EDISender::send_tagpacket(tagpacket_t& tp)
@@ -88,7 +93,7 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
     using namespace std::chrono;
 
     const auto t_frame = tp.timestamp.to_system_clock();
-    const auto t_release = t_frame + milliseconds(tist_delay_ms);
+    const auto t_release = t_frame + milliseconds(_delay_ms);
     const auto t_now = system_clock::now();
 
     const bool late = t_release < t_now;
@@ -102,12 +107,12 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
     }
 
     const auto t_now_steady = steady_clock::now();
-    stat.inhibited = t_now_steady < output_inhibit_until;
+    stat.inhibited = t_now_steady < _output_inhibit_until;
 
     stat.buffering_time_us = duration_cast<microseconds>(t_now_steady - tp.received_at).count();
-    buffering_stats.push_back(std::move(stat));
+    _buffering_stats.push_back(std::move(stat));
 
-    if (late and drop_late) {
+    if (late and _drop_late) {
         return;
     }
 
@@ -115,39 +120,39 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
         return;
     }
 
-    if (edi_sender and edi_conf.enabled()) {
+    if (_edi_sender and _edi_conf.enabled()) {
         edi::TagPacket edi_tagpacket(0);
 
         if (tp.seq.seq_valid) {
-            edi_sender->override_af_sequence(tp.seq.seq);
+            _edi_sender->override_af_sequence(tp.seq.seq);
         }
 
         if (tp.seq.pseq_valid) {
-            edi_sender->override_pft_sequence(tp.seq.pseq);
+            _edi_sender->override_pft_sequence(tp.seq.pseq);
         }
         else if (tp.seq.seq_valid) {
             // If the source isn't using PFT, set PSEQ = SEQ so that multihoming
             // with several EDI2EDI instances could work.
-            edi_sender->override_pft_sequence(tp.seq.seq);
+            _edi_sender->override_pft_sequence(tp.seq.seq);
         }
 
         edi_tagpacket.raw_tagpacket = move(tp.tagpacket);
-        edi_sender->write(edi_tagpacket);
+        _edi_sender->write(edi_tagpacket);
     }
 }
 
 void EDISender::process()
 {
-    while (running.load()) {
+    while (_running.load()) {
         tagpacket_t tagpacket;
         try {
-            tagpackets.wait_and_pop(tagpacket);
+            _tagpackets.wait_and_pop(tagpacket);
         }
         catch (const ThreadsafeQueueWakeup&) {
             break;
         }
 
-        if (not running.load()) {
+        if (not _running.load()) {
             break;
         }
 
@@ -156,18 +161,18 @@ void EDISender::process()
         send_tagpacket(tagpacket);
 
         if (dlfc % 250 == 0) { // every six seconds
-            const double n = buffering_stats.size();
+            const double n = _buffering_stats.size();
 
-            size_t num_late = std::count_if(buffering_stats.begin(), buffering_stats.end(),
+            size_t num_late = std::count_if(_buffering_stats.begin(), _buffering_stats.end(),
                     [](const buffering_stat_t& s){ return s.late; });
 
-            size_t num_inhibited = std::count_if(buffering_stats.begin(), buffering_stats.end(),
+            size_t num_inhibited = std::count_if(_buffering_stats.begin(), _buffering_stats.end(),
                     [](const buffering_stat_t& s){ return s.inhibited; });
 
             double sum = 0.0;
             double min = std::numeric_limits<double>::max();
             double max = -std::numeric_limits<double>::max();
-            for (const auto& s : buffering_stats) {
+            for (const auto& s : _buffering_stats) {
                 // convert to milliseconds
                 const double t = s.buffering_time_us / 1000.0;
                 sum += t;
@@ -183,7 +188,7 @@ void EDISender::process()
             double mean = sum / n;
 
             double sq_sum = 0;
-            for (const auto& s : buffering_stats) {
+            for (const auto& s : _buffering_stats) {
                 const double t = s.buffering_time_us / 1000.0;
                 sq_sum += (t-mean) * (t-mean);
             }
@@ -192,7 +197,7 @@ void EDISender::process()
             /* Debug code
             stringstream ss;
             ss << "times:";
-            for (const auto t : buffering_stats) {
+            for (const auto t : _buffering_stats) {
                 ss << " " << lrint(t.buffering_time_us / 1000.0);
             }
             etiLog.level(debug) << ss.str();
@@ -204,16 +209,16 @@ void EDISender::process()
                 " mean: " << mean <<
                 " stdev: " << stdev <<
                 " late: " <<
-                num_late << " of " << buffering_stats.size() << " (" <<
+                num_late << " of " << _buffering_stats.size() << " (" <<
                 std::setprecision(3) <<
                 num_late * 100.0 / n << "%)" <<
                 " inhibited: " <<
-                num_inhibited << " of " << buffering_stats.size() << " (" <<
+                num_inhibited << " of " << _buffering_stats.size() << " (" <<
                 num_inhibited * 100.0 / n << "%)" <<
                 " Frame 0 TS " << ((double)tsta / 16384.0);
 
 
-            buffering_stats.clear();
+            _buffering_stats.clear();
         }
     }
 }

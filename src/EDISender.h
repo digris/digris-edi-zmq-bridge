@@ -54,7 +54,9 @@ class EDISender {
         EDISender& operator=(const EDISender& other) = delete;
         ~EDISender();
         void start(const edi::configuration_t& conf,
-                int delay_ms, bool drop_late_packets);
+                int delay_ms,
+                bool drop_late,
+                int drop_delay_ms);
         void push_tagpacket(tagpacket_t&& tagpacket);
         void print_configuration(void);
 
@@ -64,16 +66,17 @@ class EDISender {
         void send_tagpacket(tagpacket_t& frame);
         void process(void);
 
-        std::chrono::steady_clock::time_point output_inhibit_until = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point _output_inhibit_until = std::chrono::steady_clock::now();
 
-        int tist_delay_ms;
-        bool drop_late;
-        std::atomic<bool> running;
-        std::thread process_thread;
-        edi::configuration_t edi_conf;
-        ThreadsafeQueue<tagpacket_t> tagpackets;
+        edi::configuration_t _edi_conf;
+        int _delay_ms;
+        bool _drop_late;
+        int _drop_delay_ms;
+        std::atomic<bool> _running;
+        std::thread _process_thread;
+        ThreadsafeQueue<tagpacket_t> _tagpackets;
 
-        std::shared_ptr<edi::Sender> edi_sender;
+        std::shared_ptr<edi::Sender> _edi_sender;
 
         struct buffering_stat_t {
             // Time between when we received the packets and when we transmit packets, in microseconds
@@ -81,6 +84,6 @@ class EDISender {
             bool late = false;
             bool inhibited = false;
         };
-        std::vector<buffering_stat_t> buffering_stats;
+        std::vector<buffering_stat_t> _buffering_stats;
 
 };

@@ -64,9 +64,9 @@ static void usage()
     cerr << " -c <host:port>        Connect to given host and port using TCP.\n";
     cerr << " -w <delay>            Keep every ETI frame until TIST is <delay> milliseconds after current system time.\n";
     cerr << "                       Negative delay values are also allowed.\n";
+    cerr << " -x <drop_delay>       Drop frames where for which are too late, defined by the drop delay.\n";
     cerr << " -C <path to script>   Before starting, run the given script, and only start if it returns 0.\n";
     cerr << "                       This is useful for checking that NTP is properly synchronised\n";
-    cerr << " -x                    Drop frames where for which the wait time would be negative, i.e. frames that arrived too late.\n";
     cerr << " -P                    Disable PFT and send AFPackets.\n";
     cerr << " -f <fec>              Set the FEC.\n";
     cerr << " -i <interleave>       Configure the interleaver with given interleave percentage: 0% send all fragments at once, 100% spread over 24ms, >100% spread and interleave. Default 95%\n";
@@ -135,7 +135,7 @@ class Main : public EdiDecoder::ETIDataCollector {
 
             int ch = 0;
             while (ch != -1) {
-                ch = getopt(argc, argv, "c:C:d:p:s:S:t:Pf:i:Dva:b:w:xh");
+                ch = getopt(argc, argv, "c:C:d:p:s:S:t:Pf:i:Dva:b:w:x:h");
                 switch (ch) {
                     case -1:
                         break;
@@ -187,6 +187,7 @@ class Main : public EdiDecoder::ETIDataCollector {
                         break;
                     case 'x':
                         drop_late_packets = true;
+                        drop_delay_ms = std::stoi(optarg);
                         break;
                     case 'h':
                     default:
@@ -236,9 +237,9 @@ class Main : public EdiDecoder::ETIDataCollector {
             }
 
             etiLog.level(info) << "Setting up EDI2EDI with delay " << delay_ms << " ms. " <<
-                (drop_late_packets ? "Will" : "Will not") << " drop late packets";
+                (drop_late_packets ? "Will" : "Will not") << " drop late packets (" << drop_delay_ms << " ms)";
 
-            edisender.start(edi_conf, delay_ms, drop_late_packets);
+            edisender.start(edi_conf, delay_ms, drop_late_packets, drop_delay_ms);
             edisender.print_configuration();
 
             try {
@@ -371,6 +372,7 @@ class Main : public EdiDecoder::ETIDataCollector {
         edi::configuration_t edi_conf;
         int delay_ms = 500;
         bool drop_late_packets = false;
+        int drop_delay_ms = 0;
         std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
         std::string startupcheck;
         std::string source;
