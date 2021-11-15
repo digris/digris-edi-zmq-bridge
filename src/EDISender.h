@@ -82,6 +82,7 @@ class EDISender {
             // Time between when we received the packets and when we transmit packets, in microseconds
             double buffering_time_us = 0.0;
             bool late = false;
+            bool dropped = false;
             bool inhibited = false;
         };
         std::vector<buffering_stat_t> _buffering_stats;

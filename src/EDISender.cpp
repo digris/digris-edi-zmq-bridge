@@ -94,21 +94,23 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
 
     const auto t_frame = tp.timestamp.to_system_clock();
     const auto t_release = t_frame + milliseconds(_delay_ms);
+    const auto t_latest_release = t_frame + milliseconds(_drop_delay_ms);
     const auto t_now = system_clock::now();
 
-    const bool late = t_release < t_now;
+    const bool slightly_late = t_release < t_now;
+    const bool late = t_latest_release < t_now;
 
     buffering_stat_t stat;
-    stat.late = late;
+    stat.late = slightly_late;
 
-    if (not late) {
+    if (not slightly_late) {
         const auto wait_time = t_release - t_now;
         std::this_thread::sleep_for(wait_time);
     }
 
     const auto t_now_steady = steady_clock::now();
     stat.inhibited = t_now_steady < _output_inhibit_until;
-
+    stat.dropped = late and _drop_late;
     stat.buffering_time_us = duration_cast<microseconds>(t_now_steady - tp.received_at).count();
     _buffering_stats.push_back(std::move(stat));
 
@@ -166,6 +168,9 @@ void EDISender::process()
             size_t num_late = std::count_if(_buffering_stats.begin(), _buffering_stats.end(),
                     [](const buffering_stat_t& s){ return s.late; });
 
+            size_t num_dropped = std::count_if(_buffering_stats.begin(), _buffering_stats.end(),
+                    [](const buffering_stat_t& s){ return s.dropped; });
+
             size_t num_inhibited = std::count_if(_buffering_stats.begin(), _buffering_stats.end(),
                     [](const buffering_stat_t& s){ return s.inhibited; });
 
@@ -203,20 +208,16 @@ void EDISender::process()
             etiLog.level(debug) << ss.str();
             // */
 
-            etiLog.level(info) << "Buffering time statistics [milliseconds]:"
+            etiLog.level(info) << "Buffering time statistics for " <<
+                _buffering_stats.size() << " frames [milliseconds]:" <<
                 " min: " << min <<
                 " max: " << max <<
                 " mean: " << mean <<
                 " stdev: " << stdev <<
-                " late: " <<
-                num_late << " of " << _buffering_stats.size() << " (" <<
-                std::setprecision(3) <<
-                num_late * 100.0 / n << "%)" <<
-                " inhibited: " <<
-                num_inhibited << " of " << _buffering_stats.size() << " (" <<
-                num_inhibited * 100.0 / n << "%)" <<
+                " late: " << num_late <<
+                " dropped: " << num_dropped <<
+                " inhibited: " << num_inhibited <<
                 " Frame 0 TS " << ((double)tsta / 16384.0);
-
 
             _buffering_stats.clear();
         }
