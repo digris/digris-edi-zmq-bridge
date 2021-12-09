@@ -32,15 +32,9 @@
 #include <signal.h>
 #include <getopt.h>
 #include "Log.h"
-#include "EDISender.h"
-#include "edioutput/TagItems.h"
-#include "edioutput/TagPacket.h"
-#include "edioutput/Transport.h"
-#include "edi/ETIDecoder.hpp"
+#include "main.h"
 
 using namespace std;
-
-constexpr long DEFAULT_BACKOFF = 5000;
 
 volatile sig_atomic_t running = 1;
 
@@ -86,302 +80,261 @@ static void usage()
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
 }
 
-/* There is some state inside the parsing of destination arguments,
- * because several destinations can be given.  */
 
-class Main : public EdiDecoder::ETIDataCollector {
-    public:
-        // Tell the ETIWriter what EDI protocol we receive in *ptr.
-        // This is not part of the ETI data, but is used as check
-        virtual void update_protocol(
-                const std::string& proto,
-                uint16_t major,
-                uint16_t minor) override { }
+void Main::update_fc_data(const EdiDecoder::eti_fc_data& fc_data) {
+    dlfc = fc_data.dlfc;
+}
 
-        // Update the data for the frame characterisation
-        virtual void update_fc_data(const EdiDecoder::eti_fc_data& fc_data) override {
-            dlfc = fc_data.dlfc;
-        }
+void Main::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
+    tagpacket_t tp;
+    tp.seq = tag_data.seq;
+    tp.dlfc = dlfc;
+    tp.tagpacket = move(tag_data.tagpacket);
+    tp.received_at = std::chrono::steady_clock::now();
+    tp.timestamp = move(tag_data.timestamp);
+    edisender.push_tagpacket(move(tp));
+}
 
-        // Ignore most events because we are interested in retransmitting EDI, not
-        // decoding it
-        virtual void update_fic(std::vector<uint8_t>&& fic) override { }
-        virtual void update_err(uint8_t err) override { }
-        virtual void update_edi_time(uint32_t utco, uint32_t seconds) override { }
-        virtual void update_mnsc(uint16_t mnsc) override { }
-        virtual void update_rfu(uint16_t rfu) override { }
-        virtual void add_subchannel(EdiDecoder::eti_stc_data&& stc) override { }
+int Main::start(int argc, char **argv)
+{
+    edi_conf.enable_pft = true;
 
-        // Tell the ETIWriter that the AFPacket is complete
-        virtual void assemble(EdiDecoder::ReceivedTagPacket&& tag_data) override
-        {
-            tagpacket_t tp;
-            tp.seq = tag_data.seq;
-            tp.dlfc = dlfc;
-            tp.tagpacket = move(tag_data.tagpacket);
-            tp.received_at = std::chrono::steady_clock::now();
-            tp.timestamp = move(tag_data.timestamp);
-            edisender.push_tagpacket(move(tp));
-        }
+    if (argc == 1) {
+        usage();
+        return 1;
+    }
 
-        int start(int argc, char **argv)
-        {
-            edi_conf.enable_pft = true;
+    int ch = 0;
+    while (ch != -1) {
+        ch = getopt(argc, argv, "c:C:d:p:s:S:t:Pf:i:Dva:b:w:x:h");
+        switch (ch) {
+            case -1:
+                break;
+            case 'c':
+                source = optarg;
+                break;
+            case 'C':
+                startupcheck = optarg;
+                break;
+            case 'd':
+            case 's':
+            case 'S':
+            case 't':
+            case 'p':
+                parse_destination_args(ch);
+                break;
+            case 'P':
+                edi_conf.enable_pft = false;
+                break;
+            case 'f':
+                edi_conf.fec = std::stoi(optarg);
+                break;
+            case 'i':
+                {
+                    int interleave_percent = std::stoi(optarg);
+                    if (interleave_percent != 0) {
+                        if (interleave_percent < 0) {
+                            throw std::runtime_error("EDI output: negative interleave value is invalid.");
+                        }
 
-            if (argc == 1) {
+                        edi_conf.fragment_spreading_factor = (double)interleave_percent / 100.0;
+                    }
+                }
+                break;
+            case 'D':
+                edi_conf.dump = true;
+                break;
+            case 'v':
+                edi_conf.verbose = true;
+                break;
+            case 'a':
+                edi_conf.tagpacket_alignment = std::stoi(optarg);
+                break;
+            case 'b':
+                backoff = std::chrono::milliseconds(std::stoi(optarg));
+                break;
+            case 'w':
+                delay_ms = std::stoi(optarg);
+                break;
+            case 'x':
+                drop_late_packets = true;
+                drop_delay_ms = std::stoi(optarg);
+                break;
+            case 'h':
+            default:
                 usage();
                 return 1;
+        }
+    }
+
+    if (not startupcheck.empty()) {
+        etiLog.level(info) << "Running startup check '" << startupcheck << "'";
+        int wstatus = system(startupcheck.c_str());
+
+        if (WIFEXITED(wstatus)) {
+            if (WEXITSTATUS(wstatus) == 0) {
+                etiLog.level(info) << "Startup check ok";
             }
-
-            int ch = 0;
-            while (ch != -1) {
-                ch = getopt(argc, argv, "c:C:d:p:s:S:t:Pf:i:Dva:b:w:x:h");
-                switch (ch) {
-                    case -1:
-                        break;
-                    case 'c':
-                        source = optarg;
-                        break;
-                    case 'C':
-                        startupcheck = optarg;
-                        break;
-                    case 'd':
-                    case 's':
-                    case 'S':
-                    case 't':
-                    case 'p':
-                        parse_destination_args(ch);
-                        break;
-                    case 'P':
-                        edi_conf.enable_pft = false;
-                        break;
-                    case 'f':
-                        edi_conf.fec = std::stoi(optarg);
-                        break;
-                    case 'i':
-                        {
-                            int interleave_percent = std::stoi(optarg);
-                            if (interleave_percent != 0) {
-                                if (interleave_percent < 0) {
-                                    throw std::runtime_error("EDI output: negative interleave value is invalid.");
-                                }
-
-                                edi_conf.fragment_spreading_factor = (double)interleave_percent / 100.0;
-                            }
-                        }
-                        break;
-                    case 'D':
-                        edi_conf.dump = true;
-                        break;
-                    case 'v':
-                        edi_conf.verbose = true;
-                        break;
-                    case 'a':
-                        edi_conf.tagpacket_alignment = std::stoi(optarg);
-                        break;
-                    case 'b':
-                        backoff = std::chrono::milliseconds(std::stoi(optarg));
-                        break;
-                    case 'w':
-                        delay_ms = std::stoi(optarg);
-                        break;
-                    case 'x':
-                        drop_late_packets = true;
-                        drop_delay_ms = std::stoi(optarg);
-                        break;
-                    case 'h':
-                    default:
-                        usage();
-                        return 1;
-                }
-            }
-
-            if (not startupcheck.empty()) {
-                etiLog.level(info) << "Running startup check '" << startupcheck << "'";
-                int wstatus = system(startupcheck.c_str());
-
-                if (WIFEXITED(wstatus)) {
-                    if (WEXITSTATUS(wstatus) == 0) {
-                        etiLog.level(info) << "Startup check ok";
-                    }
-                    else {
-                        etiLog.level(error) << "Startup check failed, returned " << WEXITSTATUS(wstatus);
-                        return 1;
-                    }
-                }
-                else {
-                    etiLog.level(error) << "Startup check failed, child didn't terminate normally";
-                    return 1;
-                }
-            }
-
-            add_edi_destination();
-
-            if (source.empty()) {
-                etiLog.level(error) << "source option is missing";
+            else {
+                etiLog.level(error) << "Startup check failed, returned " << WEXITSTATUS(wstatus);
                 return 1;
             }
-
-            const auto pos_colon = source.find(":");
-            if (pos_colon == string::npos or pos_colon == 0) {
-                etiLog.level(error) << "source does not contain host:port";
-                return 1;
-            }
-
-            const string connect_to_host = source.substr(0, pos_colon);
-            const int connect_to_port = stod(source.substr(pos_colon+1));
-
-            if (edi_conf.destinations.empty()) {
-                etiLog.level(error) << "No EDI destinations set";
-                return 1;
-            }
-
-            etiLog.level(info) << "Setting up EDI2EDI with delay " << delay_ms << " ms. " <<
-                (drop_late_packets ? "Will" : "Will not") << " drop late packets (" << drop_delay_ms << " ms)";
-
-            edisender.start(edi_conf, delay_ms, drop_late_packets, drop_delay_ms);
-            edisender.print_configuration();
-
-            try {
-                while (running) {
-                    EdiDecoder::ETIDecoder edi_decoder(*this);
-
-                    edi_decoder.set_verbose(edi_conf.verbose);
-                    run(edi_decoder, connect_to_host, connect_to_port);
-                    if (not running) {
-                        break;
-                    }
-                    etiLog.level(info) << "Source disconnected, reconnecting and enabling output inhibit backoff";
-                    edisender.inhibit_until(chrono::steady_clock::now() + backoff);
-
-                    // There is no state inside the edisender or inside Main that we need to
-                    // clear.
-                }
-            }
-            catch (const std::runtime_error& e) {
-                etiLog.level(error) << "Caught exception: " << e.what();
-                return 1;
-            }
-
-            return 0;
         }
-
-    private:
-        void run(EdiDecoder::ETIDecoder& edi_decoder, const string& connect_to_host, int connect_to_port)
-        {
-            Socket::TCPSocket sock;
-            etiLog.level(info) << "Connecting to TCP " << connect_to_host << ":" << connect_to_port;
-            try {
-                sock.connect(connect_to_host, connect_to_port);
-            }
-            catch (const std::runtime_error& e) {
-                etiLog.level(error) << "Error connecting to source: " << e.what();
-                return;
-            }
-
-            ssize_t ret = 0;
-            do {
-                const size_t bufsize = 32;
-                std::vector<uint8_t> buf(bufsize);
-                try {
-                    ret = sock.recv(buf.data(), buf.size(), 0, 8000);
-                    if (ret > 0) {
-                        buf.resize(ret);
-                        std::vector<uint8_t> frame;
-                        edi_decoder.push_bytes(buf);
-                    }
-                }
-                catch (const Socket::TCPSocket::Interrupted&) {
-                }
-                catch (const Socket::TCPSocket::Timeout&) {
-                    ret = 0;
-                }
-            } while (running and ret > 0);
+        else {
+            etiLog.level(error) << "Startup check failed, child didn't terminate normally";
+            return 1;
         }
+    }
 
-        void add_edi_destination()
-        {
-            if (not dest_addr_set) {
-                throw std::runtime_error("Destination address not specified for destination number " +
-                        std::to_string(edi_conf.destinations.size() + 1));
+    add_edi_destination();
+
+    if (source.empty()) {
+        etiLog.level(error) << "source option is missing";
+        return 1;
+    }
+
+    const auto pos_colon = source.find(":");
+    if (pos_colon == string::npos or pos_colon == 0) {
+        etiLog.level(error) << "source does not contain host:port";
+        return 1;
+    }
+
+    const string connect_to_host = source.substr(0, pos_colon);
+    const int connect_to_port = stod(source.substr(pos_colon+1));
+
+    if (edi_conf.destinations.empty()) {
+        etiLog.level(error) << "No EDI destinations set";
+        return 1;
+    }
+
+    etiLog.level(info) << "Setting up EDI2EDI with delay " << delay_ms << " ms. " <<
+        (drop_late_packets ? "Will" : "Will not") << " drop late packets (" << drop_delay_ms << " ms)";
+
+    edisender.start(edi_conf, delay_ms, drop_late_packets, drop_delay_ms);
+    edisender.print_configuration();
+
+    try {
+        while (running) {
+            EdiDecoder::ETIDecoder edi_decoder(*this);
+
+            edi_decoder.set_verbose(edi_conf.verbose);
+            run(edi_decoder, connect_to_host, connect_to_port);
+            if (not running) {
+                break;
             }
+            etiLog.level(info) << "Source disconnected, reconnecting and enabling output inhibit backoff";
+            edisender.inhibit_until(chrono::steady_clock::now() + backoff);
 
-            edi_conf.destinations.push_back(move(edi_destination));
-            edi_destination = std::make_shared<edi::udp_destination_t>();
-
-            source_port_set = false;
-            source_addr_set = false;
-            ttl_set = false;
-            dest_addr_set = false;
-            dest_port_set = false;
+            // There is no state inside the edisender or inside Main that we need to
+            // clear.
         }
+    }
+    catch (const std::runtime_error& e) {
+        etiLog.level(error) << "Caught exception: " << e.what();
+        return 1;
+    }
 
-        void parse_destination_args(char option)
-        {
-            if (not edi_destination) {
-                edi_destination = std::make_shared<edi::udp_destination_t>();
-            }
+    return 0;
+}
 
-            switch (option) {
-                case 'p':
-                    if (dest_port_set) {
-                        add_edi_destination();
-                    }
-                    edi_destination->dest_port = std::stoi(optarg);
-                    dest_port_set = true;
-                    break;
-                case 's':
-                    if (source_port_set) {
-                        add_edi_destination();
-                    }
-                    edi_destination->source_port = std::stoi(optarg);
-                    source_port_set = true;
-                    break;
-                case 'S':
-                    if (source_addr_set) {
-                        add_edi_destination();
-                    }
-                    edi_destination->source_addr = optarg;
-                    source_addr_set = true;
-                    break;
-                case 't':
-                    if (ttl_set) {
-                        add_edi_destination();
-                    }
-                    edi_destination->ttl = std::stoi(optarg);
-                    ttl_set = true;
-                    break;
-                case 'd':
-                    if (dest_addr_set) {
-                        add_edi_destination();
-                    }
-                    edi_destination->dest_addr = optarg;
-                    dest_addr_set = true;
-                    break;
-                default:
-                    throw std::logic_error("parse_destination_args invalid");
+void Main::run(EdiDecoder::ETIDecoder& edi_decoder, const string& connect_to_host, int connect_to_port)
+{
+    Socket::TCPSocket sock;
+    etiLog.level(info) << "Connecting to TCP " << connect_to_host << ":" << connect_to_port;
+    try {
+        sock.connect(connect_to_host, connect_to_port, 2000);
+    }
+    catch (const std::runtime_error& e) {
+        etiLog.level(error) << "Error connecting to source: " << e.what();
+        return;
+    }
+
+    ssize_t ret = 0;
+    do {
+        const size_t bufsize = 32;
+        std::vector<uint8_t> buf(bufsize);
+        try {
+            ret = sock.recv(buf.data(), buf.size(), 0, 8000);
+            if (ret > 0) {
+                buf.resize(ret);
+                std::vector<uint8_t> frame;
+                edi_decoder.push_bytes(buf);
             }
         }
+        catch (const Socket::TCPSocket::Interrupted&) {
+        }
+        catch (const Socket::TCPSocket::Timeout&) {
+            etiLog.level(error) << "TCP receive timeout";
+            ret = 0;
+        }
+    } while (running and ret > 0);
+}
 
-        std::shared_ptr<edi::udp_destination_t> edi_destination;
-        bool source_port_set = false;
-        bool source_addr_set = false;
-        bool ttl_set = false;
-        bool dest_addr_set = false;
-        bool dest_port_set = false;
-        edi::configuration_t edi_conf;
-        int delay_ms = 500;
-        bool drop_late_packets = false;
-        int drop_delay_ms = 0;
-        std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
-        std::string startupcheck;
-        std::string source;
+void Main::add_edi_destination()
+{
+    if (not dest_addr_set) {
+        throw std::runtime_error("Destination address not specified for destination number " +
+                std::to_string(edi_conf.destinations.size() + 1));
+    }
 
-        EDISender edisender;
+    edi_conf.destinations.push_back(move(edi_destination));
+    edi_destination = std::make_shared<edi::udp_destination_t>();
 
-        uint16_t dlfc = 0;
-};
+    source_port_set = false;
+    source_addr_set = false;
+    ttl_set = false;
+    dest_addr_set = false;
+    dest_port_set = false;
+}
 
+/* There is some state inside the parsing of destination arguments,
+ * because several destinations can be given.  */
+void Main::parse_destination_args(char option)
+{
+    if (not edi_destination) {
+        edi_destination = std::make_shared<edi::udp_destination_t>();
+    }
+
+    switch (option) {
+        case 'p':
+            if (dest_port_set) {
+                add_edi_destination();
+            }
+            edi_destination->dest_port = std::stoi(optarg);
+            dest_port_set = true;
+            break;
+        case 's':
+            if (source_port_set) {
+                add_edi_destination();
+            }
+            edi_destination->source_port = std::stoi(optarg);
+            source_port_set = true;
+            break;
+        case 'S':
+            if (source_addr_set) {
+                add_edi_destination();
+            }
+            edi_destination->source_addr = optarg;
+            source_addr_set = true;
+            break;
+        case 't':
+            if (ttl_set) {
+                add_edi_destination();
+            }
+            edi_destination->ttl = std::stoi(optarg);
+            ttl_set = true;
+            break;
+        case 'd':
+            if (dest_addr_set) {
+                add_edi_destination();
+            }
+            edi_destination->dest_addr = optarg;
+            dest_addr_set = true;
+            break;
+        default:
+            throw std::logic_error("parse_destination_args invalid");
+    }
+}
 
 int main(int argc, char **argv)
 {
