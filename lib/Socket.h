@@ -198,6 +198,8 @@ class TCPSocket {
          */
         ssize_t recv(void *buffer, size_t length, int flags, int timeout_ms);
 
+        SOCKET get_sockfd() const { return m_sock; }
+
     private:
         explicit TCPSocket(int sockfd);
         explicit TCPSocket(int sockfd, InetAddress remote_address);

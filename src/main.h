@@ -71,6 +71,10 @@ class Main : public EdiDecoder::ETIDataCollector {
         void add_edi_destination();
         void parse_destination_args(char option);
 
+        void init_rc();
+        bool handle_rc_request();
+        std::string handle_rc_command(const std::string& cmd);
+
         std::shared_ptr<edi::udp_destination_t> edi_destination;
         bool source_port_set = false;
         bool source_addr_set = false;
@@ -78,14 +82,15 @@ class Main : public EdiDecoder::ETIDataCollector {
         bool dest_addr_set = false;
         bool dest_port_set = false;
         edi::configuration_t edi_conf;
-        int delay_ms = 500;
-        bool drop_late_packets = false;
-        int drop_delay_ms = 0;
         std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
         std::string startupcheck;
         std::string source;
 
+        EDISenderSettings edisendersettings;
         EDISender edisender;
 
         uint16_t dlfc = 0;
+
+        std::string rc_socket_name = "";
+        int rc_socket = -1;
 };

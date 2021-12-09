@@ -48,21 +48,20 @@ EDISender::~EDISender()
     }
 }
 
-void EDISender::start(
-        const edi::configuration_t& conf,
-        int delay_ms,
-        bool drop_late,
-        int drop_delay_ms)
+void EDISender::start(const edi::configuration_t& conf, const EDISenderSettings& settings)
 {
     _edi_conf = conf;
-    _delay_ms = delay_ms;
-    _drop_late = drop_late;
-    _drop_delay_ms = drop_delay_ms;
+    _settings = settings;
 
     _edi_sender = make_shared<edi::Sender>(_edi_conf);
 
     _running.store(true);
     _process_thread = thread(&EDISender::process, this);
+}
+
+void EDISender::update_settings(const EDISenderSettings& settings)
+{
+    _settings = settings;
 }
 
 void EDISender::push_tagpacket(tagpacket_t&& tp)
@@ -93,8 +92,8 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
     using namespace std::chrono;
 
     const auto t_frame = tp.timestamp.to_system_clock();
-    const auto t_release = t_frame + milliseconds(_delay_ms);
-    const auto t_latest_release = t_frame + milliseconds(_drop_delay_ms);
+    const auto t_release = t_frame + milliseconds(_settings.delay_ms);
+    const auto t_latest_release = t_frame + milliseconds(_settings.drop_delay_ms);
     const auto t_now = system_clock::now();
 
     const bool slightly_late = t_release < t_now;
@@ -110,11 +109,11 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
 
     const auto t_now_steady = steady_clock::now();
     stat.inhibited = t_now_steady < _output_inhibit_until;
-    stat.dropped = late and _drop_late;
+    stat.dropped = late and _settings.drop_late;
     stat.buffering_time_us = duration_cast<microseconds>(t_now_steady - tp.received_at).count();
     _buffering_stats.push_back(std::move(stat));
 
-    if (late and _drop_late) {
+    if (late and _settings.drop_late) {
         return;
     }
 

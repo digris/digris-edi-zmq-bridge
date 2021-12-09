@@ -23,6 +23,12 @@ You can also fan-out an EDI data stream to several destinations.
 This tool can be considered to be the successor of ODR-ZMQ2EDI which is distributed as a part of
 [ODR-DabMux](https://github.com/Opendigitalradio/ODR-DabMux).
 
+Remote Control
+==============
+
+ODR-EDI2EDI contains a remote-control function that allows changing settings at runtime.
+Please see `./edi2edi_remote.py` for an example on how to use it.
+
 Installation
 ============
 

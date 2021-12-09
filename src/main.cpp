@@ -29,8 +29,13 @@
 #include <vector>
 #include <cmath>
 #include <cstring>
-#include <signal.h>
+#include <fcntl.h>
 #include <getopt.h>
+#include <poll.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 #include "Log.h"
 #include "main.h"
 
@@ -68,6 +73,7 @@ static void usage()
     cerr << " -v                    Enables verbose mode.\n";
     cerr << " -a <alignement>       Set the alignment of the TAG Packet (default 8).\n";
     cerr << " -b <backoff>          Number of milliseconds to backoff after an input reset (default " << DEFAULT_BACKOFF << ").\n";
+    cerr << " -r <socket_path>      Enable UNIX DGRAM remote control socket and bind to given path\n";
     cerr << " --version             Show the version and quit.\n\n";
 
     cerr << "The following options can be given several times, when more than UDP destination is desired:\n";
@@ -106,7 +112,7 @@ int Main::start(int argc, char **argv)
 
     int ch = 0;
     while (ch != -1) {
-        ch = getopt(argc, argv, "c:C:d:p:s:S:t:Pf:i:Dva:b:w:x:h");
+        ch = getopt(argc, argv, "c:C:d:p:r:s:S:t:Pf:i:Dva:b:w:x:h");
         switch (ch) {
             case -1:
                 break;
@@ -115,6 +121,9 @@ int Main::start(int argc, char **argv)
                 break;
             case 'C':
                 startupcheck = optarg;
+                break;
+            case 'r':
+                rc_socket_name = optarg;
                 break;
             case 'd':
             case 's':
@@ -154,11 +163,11 @@ int Main::start(int argc, char **argv)
                 backoff = std::chrono::milliseconds(std::stoi(optarg));
                 break;
             case 'w':
-                delay_ms = std::stoi(optarg);
+                edisendersettings.delay_ms = std::stoi(optarg);
                 break;
             case 'x':
-                drop_late_packets = true;
-                drop_delay_ms = std::stoi(optarg);
+                edisendersettings.drop_late = true;
+                edisendersettings.drop_delay_ms = std::stoi(optarg);
                 break;
             case 'h':
             default:
@@ -207,10 +216,22 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
-    etiLog.level(info) << "Setting up EDI2EDI with delay " << delay_ms << " ms. " <<
-        (drop_late_packets ? "Will" : "Will not") << " drop late packets (" << drop_delay_ms << " ms)";
+    etiLog.level(info) << "Setting up EDI2EDI with delay " << edisendersettings.delay_ms << " ms. " <<
+        (edisendersettings.drop_late ? "Will" : "Will not") <<
+        " drop late packets (" << edisendersettings.drop_delay_ms << " ms)";
 
-    edisender.start(edi_conf, delay_ms, drop_late_packets, drop_delay_ms);
+    if (not rc_socket_name.empty()) {
+        try {
+            init_rc();
+        }
+        catch (const runtime_error& e)
+        {
+            etiLog.level(error) << "RC socket init failed: " << e.what();
+            return 1;
+        }
+    }
+
+    edisender.start(edi_conf, edisendersettings);
     edisender.print_configuration();
 
     try {
@@ -229,7 +250,7 @@ int Main::start(int argc, char **argv)
             // clear.
         }
     }
-    catch (const std::runtime_error& e) {
+    catch (const runtime_error& e) {
         etiLog.level(error) << "Caught exception: " << e.what();
         return 1;
     }
@@ -249,25 +270,63 @@ void Main::run(EdiDecoder::ETIDecoder& edi_decoder, const string& connect_to_hos
         return;
     }
 
-    ssize_t ret = 0;
+    bool success = false;
     do {
-        const size_t bufsize = 32;
-        std::vector<uint8_t> buf(bufsize);
-        try {
-            ret = sock.recv(buf.data(), buf.size(), 0, 8000);
-            if (ret > 0) {
-                buf.resize(ret);
-                std::vector<uint8_t> frame;
-                edi_decoder.push_bytes(buf);
+        success = false;
+
+        size_t num_fds = 1;
+        struct pollfd fds[2];
+        fds[0].fd = sock.get_sockfd();
+        fds[0].events = POLLIN;
+        if (rc_socket != -1) {
+            fds[1].fd = rc_socket;
+            fds[1].events = POLLIN;
+            num_fds++;
+        }
+
+        int retval = poll(fds, num_fds, 8000);
+
+        if (retval == -1 and errno == EINTR) {
+            success = false;
+        }
+        else if (retval == -1) {
+            std::string errstr(strerror(errno));
+            throw std::runtime_error("Socket receive with poll() error: " + errstr);
+        }
+        else if (retval > 0) {
+            if (fds[0].revents & POLLIN) {
+                const size_t bufsize = 32;
+                std::vector<uint8_t> buf(bufsize);
+                ssize_t ret = ::recv(sock.get_sockfd(), buf.data(), bufsize, 0);
+                if (ret == -1) {
+                    if (errno == EINTR) {
+                        success = false;
+                    }
+                    else if (errno == ECONNREFUSED) {
+                        // Behave as if disconnected
+                    }
+                    else {
+                        std::string errstr(strerror(errno));
+                        throw std::runtime_error("TCP receive after poll() error: " + errstr);
+                    }
+                }
+                else if (ret > 0) {
+                    buf.resize(ret);
+                    edi_decoder.push_bytes(buf);
+                    success = true;
+                }
+                // ret == 0 means disconnected
+            }
+
+            if (fds[1].revents & POLLIN) {
+                success = handle_rc_request();
             }
         }
-        catch (const Socket::TCPSocket::Interrupted&) {
-        }
-        catch (const Socket::TCPSocket::Timeout&) {
+        else {
             etiLog.level(error) << "TCP receive timeout";
-            ret = 0;
+            success = false;
         }
-    } while (running and ret > 0);
+    } while (running and success);
 }
 
 void Main::add_edi_destination()
@@ -334,6 +393,148 @@ void Main::parse_destination_args(char option)
         default:
             throw std::logic_error("parse_destination_args invalid");
     }
+}
+
+void Main::init_rc()
+{
+    rc_socket = ::socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (rc_socket == -1) {
+        throw runtime_error("RC socket creation failed: " + string(strerror(errno)));
+    }
+
+#if 0
+    int flags = fcntl(rc_socket, F_GETFL);
+    if (flags == -1) {
+        std::string errstr(strerror(errno));
+        throw std::runtime_error("RC socket: Could not get socket flags: " + errstr);
+    }
+
+    if (fcntl(rc_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
+        std::string errstr(strerror(errno));
+        throw std::runtime_error("RC socket: Could not set O_NONBLOCK: " + errstr);
+    }
+#endif
+
+    struct sockaddr_un claddr;
+    memset(&claddr, 0, sizeof(struct sockaddr_un));
+    claddr.sun_family = AF_UNIX;
+    snprintf(claddr.sun_path, sizeof(claddr.sun_path), "%s", rc_socket_name.c_str());
+
+    (void)unlink(rc_socket_name.c_str());
+    int ret = ::bind(rc_socket, (const struct sockaddr *) &claddr, sizeof(struct sockaddr_un));
+    if (ret == -1) {
+        throw runtime_error("RC socket bind failed " + string(strerror(errno)));
+    }
+}
+
+bool Main::handle_rc_request()
+{
+    struct sockaddr_un claddr;
+    memset(&claddr, 0, sizeof(struct sockaddr_un));
+    claddr.sun_family = AF_UNIX;
+    socklen_t claddr_len = sizeof(struct sockaddr_un);
+
+    std::vector<uint8_t> buf(1024);
+    ssize_t ret = ::recvfrom(rc_socket, buf.data(), buf.size(), 0, (struct sockaddr*)&claddr, &claddr_len);
+    if (ret == -1) {
+        if (errno == EINTR) {
+            return false;
+        }
+        else {
+            throw runtime_error(string("Can't receive RC data: ") + strerror(errno));
+        }
+    }
+    else if (ret == 0) {
+        etiLog.level(error) << "RC socket recvfrom returned 0!";
+        return false;
+    }
+    else {
+        buf.resize(ret);
+        const auto cmd = string{buf.begin(), buf.end()};
+        string response;
+
+        try {
+            const string cmd_response = handle_rc_command(cmd);
+            stringstream ss;
+            ss << "{\"status\": \"ok\", \"cmd\": \"" + cmd + "\"";
+            if (not cmd_response.empty()) {
+                ss << ", \"response\": " << cmd_response;
+            }
+            ss << "}";
+            response = ss.str();
+        }
+        catch (const std::exception& e) {
+            response = "{\"status\": \"error\", \"cmd\": \"" + cmd + "\", \"message\": \"" + e.what() + "\"}";
+        }
+
+        ssize_t ret = ::sendto(rc_socket, response.data(), response.size(), 0,
+                (struct sockaddr*)&claddr, sizeof(struct sockaddr_un));
+        if (ret == -1) {
+            etiLog.level(warn) << "Could not send response to RC: " << strerror(errno);
+        }
+        else if (ret != (ssize_t)response.size()) {
+            etiLog.log(warn, "RC response short send: %zu bytes of %zu transmitted",
+                    ret, response.size());
+        }
+
+        return true;
+    }
+}
+
+std::string Main::handle_rc_command(const std::string& cmd)
+{
+    string r = "";
+
+    if (cmd.rfind("get settings", 0) == 0) {
+        using namespace chrono;
+        stringstream ss;
+        ss << "{ \"delay\": " << edisendersettings.delay_ms <<
+            ", \"drop-late\": " << (edisendersettings.drop_late ? "true" : "false") <<
+            ", \"drop-delay\": " << edisendersettings.drop_delay_ms <<
+            ", \"backoff\": " << duration_cast<milliseconds>(backoff).count() <<
+            "}";
+        r = ss.str();
+    }
+    else if (cmd.rfind("set delay ", 0) == 0) {
+        auto value = stoi(cmd.substr(10, cmd.size()));
+        if (value < -100000 or value > 100000) {
+            throw invalid_argument("delay value out of bounds +/- 100s");
+        }
+        edisendersettings.delay_ms = value;
+        edisender.update_settings(edisendersettings);
+        etiLog.level(info) << "RC setting delay to " << value;
+    }
+    else if (cmd.rfind("set drop-delay ", 0) == 0) {
+        auto value = stoi(cmd.substr(15, cmd.size()));
+        if (value < -100000 or value > 100000) {
+            throw invalid_argument("delay value out of bounds +/- 100s");
+        }
+        edisendersettings.drop_delay_ms = value;
+        edisender.update_settings(edisendersettings);
+        etiLog.level(info) << "RC setting drop-delay to " << value;
+    }
+    else if (cmd.rfind("set drop-late ", 0) == 0) {
+        auto value = stoi(cmd.substr(14, cmd.size()));
+        if (value == 0 or value == 1) {
+            edisendersettings.drop_late = value;
+            edisender.update_settings(edisendersettings);
+            etiLog.level(info) << "RC setting drop-late to " << value;
+        }
+        else {
+            throw invalid_argument("value must be 0 or 1");
+        }
+    }
+    else if (cmd.rfind("set backoff ", 0) == 0) {
+        auto value = stoi(cmd.substr(12, cmd.size()));
+        if (value < 0 or value > 100000) {
+            throw invalid_argument("backoff value out of bounds 0 to 100s");
+        }
+
+        etiLog.level(info) << "RC setting backoff to " << value;
+        backoff = std::chrono::milliseconds(value);
+    }
+
+    return r;
 }
 
 int main(int argc, char **argv)

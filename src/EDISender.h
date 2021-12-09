@@ -47,16 +47,20 @@ struct tagpacket_t {
     EdiDecoder::seq_info_t seq;
 };
 
+struct EDISenderSettings {
+    int delay_ms = -500;
+    bool drop_late = false;
+    int drop_delay_ms = 0;
+};
+
 class EDISender {
     public:
         EDISender() = default;
         EDISender(const EDISender& other) = delete;
         EDISender& operator=(const EDISender& other) = delete;
         ~EDISender();
-        void start(const edi::configuration_t& conf,
-                int delay_ms,
-                bool drop_late,
-                int drop_delay_ms);
+        void start(const edi::configuration_t& conf, const EDISenderSettings& settings);
+        void update_settings(const EDISenderSettings& settings);
         void push_tagpacket(tagpacket_t&& tagpacket);
         void print_configuration(void);
 
@@ -69,9 +73,7 @@ class EDISender {
         std::chrono::steady_clock::time_point _output_inhibit_until = std::chrono::steady_clock::now();
 
         edi::configuration_t _edi_conf;
-        int _delay_ms;
-        bool _drop_late;
-        int _drop_delay_ms;
+        EDISenderSettings _settings;
         std::atomic<bool> _running;
         std::thread _process_thread;
         ThreadsafeQueue<tagpacket_t> _tagpackets;
