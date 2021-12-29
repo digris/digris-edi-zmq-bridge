@@ -27,6 +27,7 @@
 #include <memory>
 #include <thread>
 #include <vector>
+#include <unordered_map>
 #include <cmath>
 #include <cstring>
 #include <fcntl.h>
@@ -42,6 +43,8 @@
 using namespace std;
 
 volatile sig_atomic_t running = 1;
+
+static std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
 
 void signal_handler(int signum)
 {
@@ -86,20 +89,72 @@ static void usage()
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
 }
 
+Receiver::Receiver(source_t source, EDISender& edi_sender, bool verbose) :
+    source(source),
+    edi_sender(edi_sender),
+    edi_decoder(*this)
+{
+    edi_decoder.set_verbose(verbose);
 
-void Main::update_fc_data(const EdiDecoder::eti_fc_data& fc_data) {
+    etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
+    sock.connect(source.hostname, source.port, /*nonblock*/ true);
+}
+
+void Receiver::update_fc_data(const EdiDecoder::eti_fc_data& fc_data) {
     dlfc = fc_data.dlfc;
 }
 
-void Main::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
+void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
     tagpacket_t tp;
+    tp.source = source;
     tp.seq = tag_data.seq;
     tp.dlfc = dlfc;
     tp.tagpacket = move(tag_data.tagpacket);
     tp.received_at = std::chrono::steady_clock::now();
     tp.timestamp = move(tag_data.timestamp);
-    edisender.push_tagpacket(move(tp));
+    edi_sender.push_tagpacket(move(tp));
 }
+
+void Receiver::tick()
+{
+    if (not sock.valid()) {
+        etiLog.level(info) << "Reconnecting to TCP " << source.hostname << ":" << source.port;
+        sock.connect(source.hostname, source.port, /*nonblock*/ true);
+    }
+}
+
+void Receiver::receive()
+{
+    const size_t bufsize = 32;
+    std::vector<uint8_t> buf(bufsize);
+    bool success = false;
+    ssize_t ret = ::recv(get_sockfd(), buf.data(), buf.size(), 0);
+    if (ret == -1) {
+        if (errno == EINTR) {
+            success = false;
+        }
+        else if (errno == ECONNREFUSED) {
+            // Behave as if disconnected
+        }
+        else {
+            std::string errstr(strerror(errno));
+            throw std::runtime_error("TCP receive after poll() error: " + errstr);
+        }
+    }
+    else if (ret > 0) {
+        buf.resize(ret);
+        edi_decoder.push_bytes(buf);
+        success = true;
+    }
+    // ret == 0 means disconnected
+
+    if (not success) {
+        sock.close();
+        etiLog.level(info) << "Source disconnected, reconnecting and enabling output inhibit backoff";
+        edi_sender.inhibit_until(chrono::steady_clock::now() + backoff);
+    }
+}
+
 
 int Main::start(int argc, char **argv)
 {
@@ -117,7 +172,16 @@ int Main::start(int argc, char **argv)
             case -1:
                 break;
             case 'c':
-                source = optarg;
+                {
+                    string optarg_s = optarg;
+                    const auto pos_colon = optarg_s.find(":");
+                    if (pos_colon == string::npos or pos_colon == 0) {
+                        etiLog.level(error) << "source does not contain host:port";
+                        return 1;
+                    }
+
+                    sources.push_back({optarg_s.substr(0, pos_colon), stoi(optarg_s.substr(pos_colon+1))});
+                }
                 break;
             case 'C':
                 startupcheck = optarg;
@@ -197,19 +261,10 @@ int Main::start(int argc, char **argv)
 
     add_edi_destination();
 
-    if (source.empty()) {
-        etiLog.level(error) << "source option is missing";
+    if (sources.empty()) {
+        etiLog.level(error) << "No sources given";
         return 1;
     }
-
-    const auto pos_colon = source.find(":");
-    if (pos_colon == string::npos or pos_colon == 0) {
-        etiLog.level(error) << "source does not contain host:port";
-        return 1;
-    }
-
-    const string connect_to_host = source.substr(0, pos_colon);
-    const int connect_to_port = stod(source.substr(pos_colon+1));
 
     if (edi_conf.destinations.empty()) {
         etiLog.level(error) << "No EDI destinations set";
@@ -231,102 +286,83 @@ int Main::start(int argc, char **argv)
         }
     }
 
+    vector<Receiver> receivers;
+    receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
+    for (const auto& source : sources) {
+        receivers.emplace_back(source, edisender, edi_conf.verbose);
+    }
+
+    // 15 because RC can consume an additional slot in struct pollfd fds below
+    if (receivers.size() > 15) {
+        etiLog.level(error) << "Max 15 sources supported";
+        return 1;
+    }
+
     edisender.start(edi_conf, edisendersettings);
     edisender.print_configuration();
 
     try {
-        while (running) {
-            EdiDecoder::ETIDecoder edi_decoder(*this);
+        do {
+            size_t num_fds = 0;
+            struct pollfd fds[16];
+            unordered_map<int, Receiver*> sockfd_to_receiver;
+            for (auto& rx : receivers) {
 
-            edi_decoder.set_verbose(edi_conf.verbose);
-            run(edi_decoder, connect_to_host, connect_to_port);
-            if (not running) {
-                break;
+                rx.tick();
+
+                int fd = rx.get_sockfd();
+                if (fd != -1) {
+                    fds[num_fds].fd = fd;
+                    fds[num_fds].events = POLLIN;
+                    num_fds++;
+
+                    sockfd_to_receiver.emplace(fd, &rx);
+                }
             }
-            etiLog.level(info) << "Source disconnected, reconnecting and enabling output inhibit backoff";
-            edisender.inhibit_until(chrono::steady_clock::now() + backoff);
 
-            // There is no state inside the edisender or inside Main that we need to
-            // clear.
-        }
+            if (rc_socket != -1) {
+                fds[num_fds].fd = rc_socket;
+                fds[num_fds].events = POLLIN;
+                num_fds++;
+            }
+
+            int retval = poll(fds, num_fds, 8000);
+
+            if (retval == -1 and errno == EINTR) {
+                running = 0;
+            }
+            else if (retval == -1) {
+                std::string errstr(strerror(errno));
+                throw std::runtime_error("poll() error: " + errstr);
+            }
+            else if (retval > 0) {
+                for (size_t i = 0; i < num_fds; i++) {
+                    if (fds[i].revents & POLLIN) {
+                        if (rc_socket != 1 and fds[i].fd == rc_socket) {
+                            handle_rc_request();
+                        }
+                        else {
+                            // This can throw out_of_range, which is a logic_error and should never happen
+                            sockfd_to_receiver.at(fds[i].fd)->receive();
+                        }
+                    }
+                }
+            }
+            else {
+                etiLog.level(error) << "TCP receive timeout";
+            }
+        } while (running);
     }
     catch (const runtime_error& e) {
         etiLog.level(error) << "Caught exception: " << e.what();
         return 1;
     }
+    catch (const logic_error& e) {
+        etiLog.level(error) << "Caught logic error: " << e.what();
+        return 1;
+    }
 
     return 0;
-}
-
-void Main::run(EdiDecoder::ETIDecoder& edi_decoder, const string& connect_to_host, int connect_to_port)
-{
-    Socket::TCPSocket sock;
-    etiLog.level(info) << "Connecting to TCP " << connect_to_host << ":" << connect_to_port;
-    try {
-        sock.connect(connect_to_host, connect_to_port, 2000);
-    }
-    catch (const std::runtime_error& e) {
-        etiLog.level(error) << "Error connecting to source: " << e.what();
-        return;
-    }
-
-    bool success = false;
-    do {
-        success = false;
-
-        size_t num_fds = 1;
-        struct pollfd fds[2];
-        fds[0].fd = sock.get_sockfd();
-        fds[0].events = POLLIN;
-        if (rc_socket != -1) {
-            fds[1].fd = rc_socket;
-            fds[1].events = POLLIN;
-            num_fds++;
-        }
-
-        int retval = poll(fds, num_fds, 8000);
-
-        if (retval == -1 and errno == EINTR) {
-            success = false;
-        }
-        else if (retval == -1) {
-            std::string errstr(strerror(errno));
-            throw std::runtime_error("Socket receive with poll() error: " + errstr);
-        }
-        else if (retval > 0) {
-            if (fds[0].revents & POLLIN) {
-                const size_t bufsize = 32;
-                std::vector<uint8_t> buf(bufsize);
-                ssize_t ret = ::recv(sock.get_sockfd(), buf.data(), bufsize, 0);
-                if (ret == -1) {
-                    if (errno == EINTR) {
-                        success = false;
-                    }
-                    else if (errno == ECONNREFUSED) {
-                        // Behave as if disconnected
-                    }
-                    else {
-                        std::string errstr(strerror(errno));
-                        throw std::runtime_error("TCP receive after poll() error: " + errstr);
-                    }
-                }
-                else if (ret > 0) {
-                    buf.resize(ret);
-                    edi_decoder.push_bytes(buf);
-                    success = true;
-                }
-                // ret == 0 means disconnected
-            }
-
-            if (fds[1].revents & POLLIN) {
-                success = handle_rc_request();
-            }
-        }
-        else {
-            etiLog.level(error) << "TCP receive timeout";
-            success = false;
-        }
-    } while (running and success);
 }
 
 void Main::add_edi_destination()

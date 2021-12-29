@@ -40,9 +40,13 @@ constexpr long DEFAULT_BACKOFF = 5000;
 
 void signal_handler(int signum);
 
-class Main : public EdiDecoder::ETIDataCollector {
+class Receiver : public EdiDecoder::ETIDataCollector {
     public:
-        int start(int argc, char **argv);
+        Receiver(source_t source, EDISender& edisender, bool verbose);
+        Receiver(const Receiver&) = delete;
+        Receiver operator=(const Receiver&) = delete;
+        Receiver(Receiver&&) = default;
+        Receiver& operator=(Receiver&&) = default;
 
         // Tell the ETIWriter what EDI protocol we receive in *ptr.
         // This is not part of the ETI data, but is used as check
@@ -66,8 +70,27 @@ class Main : public EdiDecoder::ETIDataCollector {
         // Tell the ETIWriter that the AFPacket is complete
         virtual void assemble(EdiDecoder::ReceivedTagPacket&& tag_data) override;
 
+        // Must return -1 if the socket is not poll()able
+        int get_sockfd() const { return sock.get_sockfd(); }
+
+        void receive();
+
+        void tick();
+
     private:
-        void run(EdiDecoder::ETIDecoder& edi_decoder, const std::string& connect_to_host, int connect_to_port);
+        source_t source;
+        EDISender& edi_sender;
+        EdiDecoder::ETIDecoder edi_decoder;
+        uint16_t dlfc = 0;
+
+        Socket::TCPSocket sock;
+};
+
+class Main {
+    public:
+        int start(int argc, char **argv);
+
+    private:
         void add_edi_destination();
         void parse_destination_args(char option);
 
@@ -82,14 +105,11 @@ class Main : public EdiDecoder::ETIDataCollector {
         bool dest_addr_set = false;
         bool dest_port_set = false;
         edi::configuration_t edi_conf;
-        std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
         std::string startupcheck;
-        std::string source;
+        std::vector<source_t> sources;
 
         EDISenderSettings edisendersettings;
         EDISender edisender;
-
-        uint16_t dlfc = 0;
 
         std::string rc_socket_name = "";
         int rc_socket = -1;

@@ -41,7 +41,6 @@ using namespace std;
 EDISender::~EDISender()
 {
     _running.store(false);
-    _tagpackets.trigger_wakeup();
 
     if (_process_thread.joinable()) {
         _process_thread.join();
@@ -66,7 +65,40 @@ void EDISender::update_settings(const EDISenderSettings& settings)
 
 void EDISender::push_tagpacket(tagpacket_t&& tp)
 {
-    _tagpackets.push(move(tp));
+    std::unique_lock<std::mutex> lock(_pending_tagpackets_mutex);
+    bool inserted = false;
+    for (auto it = _pending_tagpackets.begin(); it != _pending_tagpackets.end(); ++it) {
+        if (tp.timestamp < it->timestamp) {
+            _pending_tagpackets.insert(it, move(tp));
+            inserted = true;
+            break;
+        }
+        else if (tp.timestamp == it->timestamp) {
+            if (tp.dlfc != it->dlfc) {
+                etiLog.level(warn) << "Received packet " << tp.dlfc << " from "
+                    << tp.source.hostname << ":" << tp.source.port <<
+                    " with same timestamp but different DLFC than previous packet from "
+                    << it->source.hostname << ":" << it->source.port << " with " << it->dlfc;
+            }
+            else {
+                fprintf(stderr, "DUP %d\n", tp.dlfc);
+            }
+
+
+#warning "TODO statistics"
+
+            inserted = true;
+            break;
+        }
+    }
+
+    if (not inserted) {
+        _pending_tagpackets.push_back(move(tp));
+    }
+
+    if (_pending_tagpackets.size() > MAX_PENDING_TAGPACKETS) {
+        _pending_tagpackets.pop_front();
+    }
 }
 
 void EDISender::print_configuration()
@@ -146,11 +178,20 @@ void EDISender::process()
 {
     while (_running.load()) {
         tagpacket_t tagpacket;
-        try {
-            _tagpackets.wait_and_pop(tagpacket);
+        bool valid = false;
+
+        {
+            std::unique_lock<std::mutex> lock(_pending_tagpackets_mutex);
+            if (_pending_tagpackets.size() > 0) {
+                tagpacket = _pending_tagpackets.front();
+                valid = true;
+                _pending_tagpackets.pop_front();
+            }
         }
-        catch (const ThreadsafeQueueWakeup&) {
-            break;
+
+        if (not valid) {
+            this_thread::sleep_for(chrono::milliseconds(1));
+            continue;
         }
 
         if (not _running.load()) {

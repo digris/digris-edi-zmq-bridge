@@ -28,18 +28,26 @@
 #pragma once
 #include <iostream>
 #include <iterator>
-#include <thread>
-#include <vector>
 #include <chrono>
 #include <atomic>
-#include "ThreadsafeQueue.h"
+#include <thread>
+#include <mutex>
+#include <list>
+#include <vector>
 #include "edioutput/TagItems.h"
 #include "edioutput/TagPacket.h"
 #include "edioutput/Transport.h"
 #include "edi/common.hpp"
 
+static constexpr size_t MAX_PENDING_TAGPACKETS = 1000;
+
+struct source_t {
+    std::string hostname;
+    int port;
+};
 
 struct tagpacket_t {
+    source_t source;
     uint16_t dlfc;
     std::vector<uint8_t> tagpacket;
     EdiDecoder::frame_timestamp_t timestamp;
@@ -76,7 +84,10 @@ class EDISender {
         EDISenderSettings _settings;
         std::atomic<bool> _running;
         std::thread _process_thread;
-        ThreadsafeQueue<tagpacket_t> _tagpackets;
+
+        // ordered by transmit timestamps
+        std::list<tagpacket_t> _pending_tagpackets;
+        mutable std::mutex _pending_tagpackets_mutex;
 
         std::shared_ptr<edi::Sender> _edi_sender;
 
