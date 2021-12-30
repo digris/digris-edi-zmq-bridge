@@ -120,8 +120,11 @@ void Receiver::tick()
     // source.enabled gets modified by RC
     if (source.enabled) {
         if (not sock.valid()) {
-            etiLog.level(info) << "Reconnecting to TCP " << source.hostname << ":" << source.port;
-            sock.connect(source.hostname, source.port, /*nonblock*/ true);
+            if (reconnect_at < chrono::steady_clock::now()) {
+                etiLog.level(info) << "Reconnecting to TCP " << source.hostname << ":" << source.port;
+                sock.connect(source.hostname, source.port, /*nonblock*/ true);
+                reconnect_at += chrono::seconds(2);
+            }
         }
     }
     else {
@@ -159,8 +162,8 @@ void Receiver::receive()
 
     if (not success) {
         sock.close();
-        etiLog.level(info) << "Source disconnected, reconnecting and enabling output inhibit backoff";
-        edi_sender.inhibit_until(chrono::steady_clock::now() + backoff);
+        etiLog.level(info) << "Source disconnected, reconnecting in 2s";
+        reconnect_at = chrono::steady_clock::now() + chrono::seconds(2);
     }
 }
 

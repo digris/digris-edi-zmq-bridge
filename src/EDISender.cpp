@@ -65,6 +65,7 @@ void EDISender::update_settings(const EDISenderSettings& settings)
 
 void EDISender::push_tagpacket(tagpacket_t&& tp)
 {
+#warning "TODO handle inhibit"
     std::unique_lock<std::mutex> lock(_pending_tagpackets_mutex);
     bool inserted = false;
     for (auto it = _pending_tagpackets.begin(); it != _pending_tagpackets.end(); ++it) {
@@ -106,11 +107,6 @@ void EDISender::print_configuration()
     else {
         etiLog.level(info) << "EDI disabled";
     }
-}
-
-void EDISender::inhibit_until(std::chrono::steady_clock::time_point tp)
-{
-    _output_inhibit_until = tp;
 }
 
 void EDISender::send_tagpacket(tagpacket_t& tp)

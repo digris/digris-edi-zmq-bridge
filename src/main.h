@@ -83,6 +83,8 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         EdiDecoder::ETIDecoder edi_decoder;
         uint16_t dlfc = 0;
 
+        std::chrono::steady_clock::time_point reconnect_at = std::chrono::steady_clock::now();
+
         Socket::TCPSocket sock;
 };
 

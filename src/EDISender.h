@@ -73,8 +73,6 @@ class EDISender {
         void push_tagpacket(tagpacket_t&& tagpacket);
         void print_configuration(void);
 
-        void inhibit_until(std::chrono::steady_clock::time_point tp);
-
     private:
         void send_tagpacket(tagpacket_t& frame);
         void process(void);
