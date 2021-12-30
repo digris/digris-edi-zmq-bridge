@@ -42,11 +42,11 @@ void signal_handler(int signum);
 
 class Receiver : public EdiDecoder::ETIDataCollector {
     public:
-        Receiver(source_t source, EDISender& edisender, bool verbose);
+        Receiver(const source_t& source, EDISender& edisender, bool verbose);
         Receiver(const Receiver&) = delete;
         Receiver operator=(const Receiver&) = delete;
         Receiver(Receiver&&) = default;
-        Receiver& operator=(Receiver&&) = default;
+        Receiver& operator=(Receiver&&) = delete;
 
         // Tell the ETIWriter what EDI protocol we receive in *ptr.
         // This is not part of the ETI data, but is used as check
@@ -78,7 +78,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         void tick();
 
     private:
-        source_t source;
+        const source_t& source;
         EDISender& edi_sender;
         EdiDecoder::ETIDecoder edi_decoder;
         uint16_t dlfc = 0;

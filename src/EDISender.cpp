@@ -80,9 +80,6 @@ void EDISender::push_tagpacket(tagpacket_t&& tp)
                     " with same timestamp but different DLFC than previous packet from "
                     << it->source.hostname << ":" << it->source.port << " with " << it->dlfc;
             }
-            else {
-                fprintf(stderr, "DUP %d\n", tp.dlfc);
-            }
 
 
 #warning "TODO statistics"

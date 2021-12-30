@@ -44,6 +44,7 @@ static constexpr size_t MAX_PENDING_TAGPACKETS = 1000;
 struct source_t {
     std::string hostname;
     int port;
+    bool enabled;
 };
 
 struct tagpacket_t {

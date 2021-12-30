@@ -14,13 +14,20 @@ parser.add_argument('--drop', action="store_true", help='Enable dropping of late
 parser.add_argument('--no-drop', action="store_true", help='Disable dropping of late packets', required=False)
 parser.add_argument('-x', '--drop-delay', type=int, help='Set the drop-delay to the given value in milliseconds', required=False)
 parser.add_argument('-b', '--backoff', type=int, help='Set the backoff to the given value in milliseconds', required=False)
+parser.add_argument('--list-inputs', action="store_true", help='List inputs and their settings', required=False)
+
+parser.add_argument('--enable-input', type=str, help='Enable input specified by hostname:port', required=False)
+parser.add_argument('--disable-input', type=str, help='Disable input specified by hostname:port', required=False)
 
 def send_command(socket_path, command):
     s.sendto(command.encode(), socket_path)
     dat, addr = s.recvfrom(4096)
     msg = dat.decode()
     try:
-        pprint.pprint(json.loads(msg))
+        # Round-trip through the json library so that it looks nice on console output
+        # and can be reprocessed
+        data = json.loads(msg)
+        print(json.dumps(data, indent=2))
     except:
         print("Response is not JSON", file=sys.stderr)
         print("{}\n".format(msg))
@@ -38,25 +45,37 @@ if os.path.exists(MY_SOCK_PATH):
 s.bind(MY_SOCK_PATH)
 
 if cli_args.get:
-    print("Current settings:")
+    print("Current settings:", file=sys.stderr)
     send_command(cli_args.socket, "get settings")
 
 if cli_args.drop:
-    print("Enable late packet drop")
+    print("Enable late packet drop", file=sys.stderr)
     send_command(cli_args.socket, "set drop-late 1")
 
 if cli_args.no_drop:
-    print("Disable late packet drop")
+    print("Disable late packet drop", file=sys.stderr)
     send_command(cli_args.socket, "set drop-late 0")
 
 if cli_args.delay:
-    print(f"Setting delay to {cli_args.delay}")
+    print(f"Setting delay to {cli_args.delay}", file=sys.stderr)
     send_command(cli_args.socket, f"set delay {cli_args.delay}")
 
 if cli_args.drop_delay:
-    print(f"Setting drop-delay to {cli_args.drop_delay}")
+    print(f"Setting drop-delay to {cli_args.drop_delay}", file=sys.stderr)
     send_command(cli_args.socket, f"set drop-delay {cli_args.drop_delay}")
 
 if cli_args.backoff:
-    print(f"Setting backoff to {cli_args.backoff}")
+    print(f"Setting backoff to {cli_args.backoff}", file=sys.stderr)
     send_command(cli_args.socket, f"set backoff {cli_args.backoff}")
+
+if cli_args.list_inputs:
+    print("Inputs:", file=sys.stderr)
+    send_command(cli_args.socket, "list inputs")
+
+if cli_args.enable_input:
+    print(f"Enabling input {cli_args.enable_input}", file=sys.stderr)
+    send_command(cli_args.socket, f"set input enable {cli_args.enable_input}")
+
+if cli_args.disable_input:
+    print(f"Disable input {cli_args.disable_input}", file=sys.stderr)
+    send_command(cli_args.socket, f"set input disable {cli_args.disable_input}")

@@ -89,7 +89,7 @@ static void usage()
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
 }
 
-Receiver::Receiver(source_t source, EDISender& edi_sender, bool verbose) :
+Receiver::Receiver(const source_t& source, EDISender& edi_sender, bool verbose) :
     source(source),
     edi_sender(edi_sender),
     edi_decoder(*this)
@@ -117,9 +117,18 @@ void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
 
 void Receiver::tick()
 {
-    if (not sock.valid()) {
-        etiLog.level(info) << "Reconnecting to TCP " << source.hostname << ":" << source.port;
-        sock.connect(source.hostname, source.port, /*nonblock*/ true);
+    // source.enabled gets modified by RC
+    if (source.enabled) {
+        if (not sock.valid()) {
+            etiLog.level(info) << "Reconnecting to TCP " << source.hostname << ":" << source.port;
+            sock.connect(source.hostname, source.port, /*nonblock*/ true);
+        }
+    }
+    else {
+        if (sock.valid()) {
+            etiLog.level(info) << "Disconnecting from TCP " << source.hostname << ":" << source.port;
+            sock.close();
+        }
     }
 }
 
@@ -180,7 +189,8 @@ int Main::start(int argc, char **argv)
                         return 1;
                     }
 
-                    sources.push_back({optarg_s.substr(0, pos_colon), stoi(optarg_s.substr(pos_colon+1))});
+                    const bool enabled = true;
+                    sources.push_back({optarg_s.substr(0, pos_colon), stoi(optarg_s.substr(pos_colon+1)), enabled});
                 }
                 break;
             case 'C':
@@ -291,6 +301,7 @@ int Main::start(int argc, char **argv)
     for (const auto& source : sources) {
         receivers.emplace_back(source, edisender, edi_conf.verbose);
     }
+
 
     // 15 because RC can consume an additional slot in struct pollfd fds below
     if (receivers.size() > 15) {
@@ -530,6 +541,47 @@ std::string Main::handle_rc_command(const std::string& cmd)
             ", \"backoff\": " << duration_cast<milliseconds>(backoff).count() <<
             "}";
         r = ss.str();
+    }
+    else if (cmd.rfind("list inputs", 0) == 0) {
+        stringstream ss;
+        ss << "[\n";
+        for (auto it = sources.begin() ; it != sources.end();) {
+            ss << " {";
+
+            ss << " \"hostname\": \"" << it->hostname << "\"," <<
+                  " \"port\": \"" << it->port << "\"," <<
+                  " \"enabled\": " << (it->enabled ? "true" : "false");
+
+            ++it;
+            if (it == sources.end()) {
+                ss << " }\n";
+            }
+            else {
+                ss << " },\n";
+            }
+        }
+        ss << "]";
+        r = ss.str();
+    }
+    else if (cmd.rfind("set input enable ", 0) == 0) {
+        auto input = cmd.substr(17, cmd.size());
+        for (auto& source : sources) {
+            if (source.hostname + ":" + to_string(source.port) == input) {
+                source.enabled = true;
+                etiLog.level(info) << "RC enabling input " << input;
+                break;
+            }
+        }
+    }
+    else if (cmd.rfind("set input disable ", 0) == 0) {
+        auto input = cmd.substr(18, cmd.size());
+        for (auto& source : sources) {
+            if (source.hostname + ":" + to_string(source.port) == input) {
+                source.enabled = false;
+                etiLog.level(info) << "RC disabling input " << input;
+                break;
+            }
+        }
     }
     else if (cmd.rfind("set delay ", 0) == 0) {
         auto value = stoi(cmd.substr(10, cmd.size()));
