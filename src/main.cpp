@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2021
+   Copyright (C) 2022
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -64,6 +64,7 @@ static void usage()
     cerr << "Options:\n";
     cerr << "The following options can be given only once:\n";
     cerr << " -c <host:port>        Connect to given host and port using TCP.\n";
+    cerr << " -F <host:port>        Add fallback input to given host and port using TCP.\n";
     cerr << " -w <delay>            Keep every ETI frame until TIST is <delay> milliseconds after current system time.\n";
     cerr << "                       Negative delay values are also allowed.\n";
     cerr << " -x <drop_delay>       Drop frames where for which are too late, defined by the drop delay.\n";
@@ -96,8 +97,10 @@ Receiver::Receiver(const source_t& source, EDISender& edi_sender, bool verbose) 
 {
     edi_decoder.set_verbose(verbose);
 
-    etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
-    sock.connect(source.hostname, source.port, /*nonblock*/ true);
+    if (source.enabled) {
+        etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
+        sock.connect(source.hostname, source.port, /*nonblock*/ true);
+    }
 }
 
 void Receiver::update_fc_data(const EdiDecoder::eti_fc_data& fc_data) {
@@ -165,6 +168,9 @@ void Receiver::receive()
         etiLog.level(info) << "Source disconnected, reconnecting in 2s";
         reconnect_at = chrono::steady_clock::now() + chrono::seconds(2);
     }
+    else {
+        most_recent_rx = chrono::system_clock::now();
+    }
 }
 
 
@@ -179,11 +185,12 @@ int Main::start(int argc, char **argv)
 
     int ch = 0;
     while (ch != -1) {
-        ch = getopt(argc, argv, "c:C:d:p:r:s:S:t:Pf:i:Dva:b:w:x:h");
+        ch = getopt(argc, argv, "c:C:d:F:p:r:s:S:t:Pf:i:Dva:b:w:x:h");
         switch (ch) {
             case -1:
                 break;
             case 'c':
+            case 'F':
                 {
                     string optarg_s = optarg;
                     const auto pos_colon = optarg_s.find(":");
@@ -192,7 +199,7 @@ int Main::start(int argc, char **argv)
                         return 1;
                     }
 
-                    const bool enabled = true;
+                    const bool enabled = ch == 'c';
                     sources.push_back({optarg_s.substr(0, pos_colon), stoi(optarg_s.substr(pos_colon+1)), enabled});
                 }
                 break;
@@ -299,7 +306,6 @@ int Main::start(int argc, char **argv)
         }
     }
 
-    vector<Receiver> receivers;
     receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
     for (const auto& source : sources) {
         receivers.emplace_back(source, edisender, edi_conf.verbose);
@@ -548,15 +554,19 @@ std::string Main::handle_rc_command(const std::string& cmd)
     else if (cmd.rfind("list inputs", 0) == 0) {
         stringstream ss;
         ss << "[\n";
-        for (auto it = sources.begin() ; it != sources.end();) {
-            ss << " {";
+        for (auto it = receivers.begin() ; it != receivers.end();) {
 
-            ss << " \"hostname\": \"" << it->hostname << "\"," <<
-                  " \"port\": \"" << it->port << "\"," <<
-                  " \"enabled\": " << (it->enabled ? "true" : "false");
+            auto rx_packet_time =
+                chrono::system_clock::to_time_t(it->get_time_last_packet());
+
+            ss << " {" <<
+                  " \"hostname\": \"" << it->source.hostname << "\"," <<
+                  " \"port\": " << it->source.port << "," <<
+                  " \"last_packet_received_at\": " << rx_packet_time << "," <<
+                  " \"enabled\": " << (it->source.enabled ? "true" : "false");
 
             ++it;
-            if (it == sources.end()) {
+            if (it == receivers.end()) {
                 ss << " }\n";
             }
             else {
@@ -583,6 +593,33 @@ std::string Main::handle_rc_command(const std::string& cmd)
                 source.enabled = false;
                 etiLog.level(info) << "RC disabling input " << input;
                 break;
+            }
+        }
+    }
+    else if (cmd.rfind("switch input ", 0) == 0) {
+        auto input = cmd.substr(13, cmd.size());
+
+        // Check existence first, otherwise we'd disable all inputs
+        bool found = false;
+        for (auto& source : sources) {
+            if (source.hostname + ":" + to_string(source.port) == input) {
+                found = true;
+                break;
+            }
+        }
+
+        if (not found) {
+            etiLog.level(info) << "RC switch to input " << input << " impossible: input not found.";
+            throw invalid_argument("Cannot find specified input");
+        }
+
+        for (auto& source : sources) {
+            if (source.hostname + ":" + to_string(source.port) == input) {
+                etiLog.level(info) << "RC switching to input " << input;
+                source.enabled = true;
+            }
+            else {
+                source.enabled = false;
             }
         }
     }
@@ -623,6 +660,9 @@ std::string Main::handle_rc_command(const std::string& cmd)
 
         etiLog.level(info) << "RC setting backoff to " << value;
         backoff = std::chrono::milliseconds(value);
+    }
+    else {
+        throw runtime_error("Unknown command");
     }
 
     return r;
