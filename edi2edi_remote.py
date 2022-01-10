@@ -18,7 +18,6 @@ parser.add_argument('--list-inputs', action="store_true", help='List inputs and 
 
 parser.add_argument('--enable-input', type=str, help='Enable input specified by hostname:port', required=False)
 parser.add_argument('--disable-input', type=str, help='Disable input specified by hostname:port', required=False)
-parser.add_argument('--switch-input', type=str, help='Enable input specified by hostname:port and disable all other inputs', required=False)
 
 cli_args = parser.parse_args()
 
@@ -83,6 +82,3 @@ if cli_args.disable_input:
     print(f"Disable input {cli_args.disable_input}", file=sys.stderr)
     send_command(f"set input disable {cli_args.disable_input}")
 
-if cli_args.switch_input:
-    print(f"Switch input {cli_args.switch_input}", file=sys.stderr)
-    send_command(f"switch input {cli_args.switch_input}")

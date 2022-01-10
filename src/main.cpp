@@ -21,6 +21,7 @@
    along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <iterator>
@@ -44,7 +45,7 @@ using namespace std;
 
 volatile sig_atomic_t running = 1;
 
-static std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
+static constexpr auto RECONNECT_DELAY = chrono::milliseconds(24);
 
 void signal_handler(int signum)
 {
@@ -63,6 +64,8 @@ static void usage()
 
     cerr << "Options:\n";
     cerr << "The following options can be given only once:\n";
+    cerr << " -m (merge|switch)     Choose input merging or switching mode. (default: merge)\n";
+    cerr << " --switch-delay <ms>   Set the delay after an input interruption before switching (default: " << DEFAULT_SWITCH_DELAY << " ms).\n";
     cerr << " -c <host:port>        Connect to given host and port using TCP.\n";
     cerr << " -F <host:port>        Add fallback input to given host and port using TCP.\n";
     cerr << " -w <delay>            Keep every ETI frame until TIST is <delay> milliseconds after current system time.\n";
@@ -76,7 +79,7 @@ static void usage()
     cerr << " -D                    Dump the EDI to edi.debug file.\n";
     cerr << " -v                    Enables verbose mode.\n";
     cerr << " -a <alignement>       Set the alignment of the TAG Packet (default 8).\n";
-    cerr << " -b <backoff>          Number of milliseconds to backoff after an input reset (default " << DEFAULT_BACKOFF << ").\n";
+    cerr << " -b <backoff>          Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
     cerr << " -r <socket_path>      Enable UNIX DGRAM remote control socket and bind to given path\n";
     cerr << " --version             Show the version and quit.\n\n";
 
@@ -90,14 +93,19 @@ static void usage()
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
 }
 
-Receiver::Receiver(const source_t& source, EDISender& edi_sender, bool verbose) :
+static const struct option longopts[] = {
+    {"switch-delay", required_argument, 0, 1},
+    {0, 0, 0, 0}
+};
+
+Receiver::Receiver(source_t& source, EDISender& edi_sender, bool verbose) :
     source(source),
     edi_sender(edi_sender),
     edi_decoder(*this)
 {
     edi_decoder.set_verbose(verbose);
 
-    if (source.enabled) {
+    if (source.active) {
         etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
         sock.connect(source.hostname, source.port, /*nonblock*/ true);
     }
@@ -109,7 +117,8 @@ void Receiver::update_fc_data(const EdiDecoder::eti_fc_data& fc_data) {
 
 void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
     tagpacket_t tp;
-    tp.source = source;
+    tp.hostname = source.hostname;
+    tp.port = source.port;
     tp.seq = tag_data.seq;
     tp.dlfc = dlfc;
     tp.tagpacket = move(tag_data.tagpacket);
@@ -120,13 +129,12 @@ void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
 
 void Receiver::tick()
 {
-    // source.enabled gets modified by RC
-    if (source.enabled) {
+    if (source.active) {
         if (not sock.valid()) {
             if (reconnect_at < chrono::steady_clock::now()) {
                 etiLog.level(info) << "Reconnecting to TCP " << source.hostname << ":" << source.port;
                 sock.connect(source.hostname, source.port, /*nonblock*/ true);
-                reconnect_at += chrono::seconds(2);
+                reconnect_at += RECONNECT_DELAY;
             }
         }
     }
@@ -165,11 +173,12 @@ void Receiver::receive()
 
     if (not success) {
         sock.close();
-        etiLog.level(info) << "Source disconnected, reconnecting in 2s";
-        reconnect_at = chrono::steady_clock::now() + chrono::seconds(2);
+        etiLog.level(info) << "Source disconnected, reconnecting...";
+        reconnect_at = chrono::steady_clock::now() + RECONNECT_DELAY;
     }
     else {
-        most_recent_rx = chrono::system_clock::now();
+        most_recent_rx_systime = chrono::system_clock::now();
+        most_recent_rx_time = chrono::steady_clock::now();
     }
 }
 
@@ -184,10 +193,26 @@ int Main::start(int argc, char **argv)
     }
 
     int ch = 0;
+    int index = 0;
     while (ch != -1) {
-        ch = getopt(argc, argv, "c:C:d:F:p:r:s:S:t:Pf:i:Dva:b:w:x:h");
+        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:Pf:i:Dva:b:w:x:h", longopts, &index);
         switch (ch) {
             case -1:
+                break;
+            case 1: // --switch-delay
+                switch_delay = std::chrono::milliseconds(std::stoi(optarg));
+                break;
+            case 'm':
+                if (strcmp(optarg, "switch") == 0) {
+                    mode = Mode::Switching;
+                }
+                else if (strcmp(optarg, "merge") == 0) {
+                    mode = Mode::Merging;
+                }
+                else {
+                    etiLog.level(error) << "Invalid mode selected";
+                    return 1;
+                }
                 break;
             case 'c':
             case 'F':
@@ -200,7 +225,8 @@ int Main::start(int argc, char **argv)
                     }
 
                     const bool enabled = ch == 'c';
-                    sources.push_back({optarg_s.substr(0, pos_colon), stoi(optarg_s.substr(pos_colon+1)), enabled});
+                    const bool active = false; // Initialised once we know mode
+                    sources.push_back({optarg_s.substr(0, pos_colon), stoi(optarg_s.substr(pos_colon+1)), enabled, active});
                 }
                 break;
             case 'C':
@@ -286,6 +312,11 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
+    size_t num_enabled = std::count_if(sources.cbegin(), sources.cend(), [](const source_t& src) { return src.enabled; });
+    if (num_enabled == 0) {
+        etiLog.level(warn) << "Starting up with zero enabled sources. Did you forget to add a -c option?";
+    }
+
     if (edi_conf.destinations.empty()) {
         etiLog.level(error) << "No EDI destinations set";
         return 1;
@@ -307,7 +338,7 @@ int Main::start(int argc, char **argv)
     }
 
     receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
-    for (const auto& source : sources) {
+    for (auto& source : sources) {
         receivers.emplace_back(source, edisender, edi_conf.verbose);
     }
 
@@ -323,11 +354,88 @@ int Main::start(int argc, char **argv)
 
     try {
         do {
+            switch (mode) {
+                case Mode::Switching:
+                    {
+                        using namespace chrono;
+                        const auto now = steady_clock::now();
+                        // Ensure only one input is connected
+                        size_t num_active = 0;
+                        for (auto& rx : receivers) {
+                            // Changed through RC
+                            if (rx.source.active and not rx.source.enabled) {
+                                rx.source.active = false;
+                            }
+
+                            num_active += rx.source.active ? 1 : 0;
+                        }
+
+                        if (num_active == 0) {
+                            // Activate the first enabled source
+                            for (auto& source : sources) {
+                                if (source.enabled) {
+                                    source.active = true;
+                                    break;
+                                }
+                            }
+                        }
+                        else if (num_active != 1) {
+                            etiLog.level(error) << "Switching error: more than one input active";
+                        }
+
+                        // Assumes only one active
+                        for (auto rx = receivers.begin(); rx != receivers.end(); ++rx) {
+
+                            if (rx->source.active) {
+                                auto packet_age = duration_cast<milliseconds>(now - rx->get_time_last_packet());
+                                if (packet_age > switch_delay) {
+                                    bool switched = false;
+                                    auto rx2 = rx;
+                                    do {
+                                        // Rotate through the sources
+                                        ++rx2;
+                                        if (rx2 == receivers.end()) {
+                                            rx2 = receivers.begin();
+                                        }
+
+                                        if (rx2 != rx and rx2->source.enabled) {
+                                            rx->source.active = false;
+                                            rx2->source.active = true;
+                                            switched = true;
+
+                                            etiLog.level(warn) << "Switching from " <<
+                                                rx->source.hostname << ":" << rx->source.port <<
+                                                " to " <<
+                                                rx2->source.hostname << ":" << rx2->source.port <<
+                                                " because of lack of data";
+                                            break;
+                                        }
+                                    } while (rx2 != rx);
+
+                                    if (not switched) {
+                                        etiLog.level(error) << "Failed to switch from " <<
+                                                rx->source.hostname << ":" << rx->source.port <<
+                                                " no other usable input found";
+                                    }
+                                }
+                                break;
+                            }
+                        }
+
+                    }
+                    break;
+                case Mode::Merging:
+                    for (auto& source : sources) {
+                        source.active = source.enabled;
+                    }
+                    break;
+            }
+
+
             size_t num_fds = 0;
             struct pollfd fds[16];
             unordered_map<int, Receiver*> sockfd_to_receiver;
             for (auto& rx : receivers) {
-
                 rx.tick();
 
                 int fd = rx.get_sockfd();
@@ -346,7 +454,7 @@ int Main::start(int argc, char **argv)
                 num_fds++;
             }
 
-            int retval = poll(fds, num_fds, 8000);
+            int retval = poll(fds, num_fds, 240);
 
             if (retval == -1 and errno == EINTR) {
                 running = 0;
@@ -554,15 +662,16 @@ std::string Main::handle_rc_command(const std::string& cmd)
     else if (cmd.rfind("list inputs", 0) == 0) {
         stringstream ss;
         ss << "[\n";
-        for (auto it = receivers.begin() ; it != receivers.end();) {
+        for (auto it = receivers.begin(); it != receivers.end();) {
 
             auto rx_packet_time =
-                chrono::system_clock::to_time_t(it->get_time_last_packet());
+                chrono::system_clock::to_time_t(it->get_systime_last_packet());
 
             ss << " {" <<
                   " \"hostname\": \"" << it->source.hostname << "\"," <<
                   " \"port\": " << it->source.port << "," <<
                   " \"last_packet_received_at\": " << rx_packet_time << "," <<
+                  " \"active\": " << (it->source.active ? "true" : "false") << "," <<
                   " \"enabled\": " << (it->source.enabled ? "true" : "false");
 
             ++it;
@@ -578,49 +687,36 @@ std::string Main::handle_rc_command(const std::string& cmd)
     }
     else if (cmd.rfind("set input enable ", 0) == 0) {
         auto input = cmd.substr(17, cmd.size());
+        bool found = false;
         for (auto& source : sources) {
             if (source.hostname + ":" + to_string(source.port) == input) {
                 source.enabled = true;
                 etiLog.level(info) << "RC enabling input " << input;
-                break;
-            }
-        }
-    }
-    else if (cmd.rfind("set input disable ", 0) == 0) {
-        auto input = cmd.substr(18, cmd.size());
-        for (auto& source : sources) {
-            if (source.hostname + ":" + to_string(source.port) == input) {
-                source.enabled = false;
-                etiLog.level(info) << "RC disabling input " << input;
-                break;
-            }
-        }
-    }
-    else if (cmd.rfind("switch input ", 0) == 0) {
-        auto input = cmd.substr(13, cmd.size());
-
-        // Check existence first, otherwise we'd disable all inputs
-        bool found = false;
-        for (auto& source : sources) {
-            if (source.hostname + ":" + to_string(source.port) == input) {
                 found = true;
                 break;
             }
         }
 
         if (not found) {
-            etiLog.level(info) << "RC switch to input " << input << " impossible: input not found.";
+            etiLog.level(info) << "RC disable input " << input << " impossible: input not found.";
             throw invalid_argument("Cannot find specified input");
         }
-
+    }
+    else if (cmd.rfind("set input disable ", 0) == 0) {
+        auto input = cmd.substr(18, cmd.size());
+        bool found = false;
         for (auto& source : sources) {
             if (source.hostname + ":" + to_string(source.port) == input) {
-                etiLog.level(info) << "RC switching to input " << input;
-                source.enabled = true;
-            }
-            else {
                 source.enabled = false;
+                etiLog.level(info) << "RC disabling input " << input;
+                found = true;
+                break;
             }
+        }
+
+        if (not found) {
+            etiLog.level(info) << "RC disable input " << input << " impossible: input not found.";
+            throw invalid_argument("Cannot find specified input");
         }
     }
     else if (cmd.rfind("set delay ", 0) == 0) {

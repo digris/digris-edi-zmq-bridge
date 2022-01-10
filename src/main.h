@@ -37,12 +37,25 @@
 #include "edi/ETIDecoder.hpp"
 
 constexpr long DEFAULT_BACKOFF = 5000;
+constexpr long DEFAULT_SWITCH_DELAY = 2000;
 
 void signal_handler(int signum);
 
+struct source_t {
+    std::string hostname;
+    int port;
+
+    // User-controlled setting
+    bool enabled;
+
+    // Mode merging: active will be set for all enabled inputs.
+    // Mode switching: only one input will be active
+    bool active;
+};
+
 class Receiver : public EdiDecoder::ETIDataCollector {
     public:
-        Receiver(const source_t& source, EDISender& edisender, bool verbose);
+        Receiver(source_t& source, EDISender& edisender, bool verbose);
         Receiver(const Receiver&) = delete;
         Receiver operator=(const Receiver&) = delete;
         Receiver(Receiver&&) = default;
@@ -77,12 +90,17 @@ class Receiver : public EdiDecoder::ETIDataCollector {
 
         void tick();
 
-        std::chrono::system_clock::time_point get_time_last_packet() const
+        std::chrono::system_clock::time_point get_systime_last_packet() const
         {
-            return most_recent_rx;
+            return most_recent_rx_systime;
         }
 
-        const source_t& source;
+        std::chrono::steady_clock::time_point get_time_last_packet() const
+        {
+            return most_recent_rx_time;
+        }
+
+        source_t& source;
 
     private:
         EDISender& edi_sender;
@@ -90,7 +108,8 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         uint16_t dlfc = 0;
 
         std::chrono::steady_clock::time_point reconnect_at = std::chrono::steady_clock::now();
-        std::chrono::system_clock::time_point most_recent_rx = std::chrono::system_clock::now();
+        std::chrono::steady_clock::time_point most_recent_rx_time = std::chrono::steady_clock::now();
+        std::chrono::system_clock::time_point most_recent_rx_systime = std::chrono::system_clock::now();
 
         Socket::TCPSocket sock;
 };
@@ -123,4 +142,15 @@ class Main {
 
         std::string rc_socket_name = "";
         int rc_socket = -1;
+
+        std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
+        std::chrono::steady_clock::duration switch_delay = std::chrono::milliseconds(DEFAULT_SWITCH_DELAY);
+
+        enum class Mode {
+            Switching,
+            Merging,
+        };
+
+        Mode mode = Mode::Merging;
+
 };

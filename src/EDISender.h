@@ -3,7 +3,7 @@
    2011, 2012 Her Majesty the Queen in Right of Canada (Communications
    Research Center Canada)
 
-   Copyright (C) 2021
+   Copyright (C) 2022
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -41,14 +41,11 @@
 
 static constexpr size_t MAX_PENDING_TAGPACKETS = 1000;
 
-struct source_t {
+struct tagpacket_t {
+    // source information
     std::string hostname;
     int port;
-    bool enabled;
-};
 
-struct tagpacket_t {
-    source_t source;
     uint16_t dlfc;
     std::vector<uint8_t> tagpacket;
     EdiDecoder::frame_timestamp_t timestamp;

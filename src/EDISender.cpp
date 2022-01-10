@@ -65,7 +65,6 @@ void EDISender::update_settings(const EDISenderSettings& settings)
 
 void EDISender::push_tagpacket(tagpacket_t&& tp)
 {
-#warning "TODO handle inhibit"
     std::unique_lock<std::mutex> lock(_pending_tagpackets_mutex);
     bool inserted = false;
     for (auto it = _pending_tagpackets.begin(); it != _pending_tagpackets.end(); ++it) {
@@ -77,9 +76,9 @@ void EDISender::push_tagpacket(tagpacket_t&& tp)
         else if (tp.timestamp == it->timestamp) {
             if (tp.dlfc != it->dlfc) {
                 etiLog.level(warn) << "Received packet " << tp.dlfc << " from "
-                    << tp.source.hostname << ":" << tp.source.port <<
+                    << tp.hostname << ":" << tp.port <<
                     " with same timestamp but different DLFC than previous packet from "
-                    << it->source.hostname << ":" << it->source.port << " with " << it->dlfc;
+                    << it->hostname << ":" << it->port << " with " << it->dlfc;
             }
 
 
