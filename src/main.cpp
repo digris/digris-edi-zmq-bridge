@@ -122,8 +122,9 @@ void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
     tp.seq = tag_data.seq;
     tp.dlfc = dlfc;
     tp.tagpacket = move(tag_data.tagpacket);
-    tp.received_at = std::chrono::steady_clock::now();
+    tp.received_at = chrono::steady_clock::now();
     tp.timestamp = move(tag_data.timestamp);
+    margin = tp.timestamp.to_system_clock() - chrono::system_clock::now();
     edi_sender.push_tagpacket(move(tp));
 }
 
@@ -132,7 +133,6 @@ void Receiver::tick()
     if (source.active) {
         if (not sock.valid()) {
             if (reconnect_at < chrono::steady_clock::now()) {
-                etiLog.level(info) << "Reconnecting to TCP " << source.hostname << ":" << source.port;
                 sock.connect(source.hostname, source.port, /*nonblock*/ true);
                 reconnect_at += RECONNECT_DELAY;
             }
@@ -145,11 +145,20 @@ void Receiver::tick()
         }
     }
 }
+int Receiver::get_margin_ms() const {
+    if (source.active) {
+        using namespace chrono;
+        return duration_cast<milliseconds>(margin).count();
+    }
+    else {
+        return 0;
+    }
+}
 
 void Receiver::receive()
 {
     const size_t bufsize = 32;
-    std::vector<uint8_t> buf(bufsize);
+    vector<uint8_t> buf(bufsize);
     bool success = false;
     ssize_t ret = ::recv(get_sockfd(), buf.data(), buf.size(), 0);
     if (ret == -1) {
@@ -160,8 +169,8 @@ void Receiver::receive()
             // Behave as if disconnected
         }
         else {
-            std::string errstr(strerror(errno));
-            throw std::runtime_error("TCP receive after poll() error: " + errstr);
+            string errstr(strerror(errno));
+            throw runtime_error("TCP receive after poll() error: " + errstr);
         }
     }
     else if (ret > 0) {
@@ -173,7 +182,6 @@ void Receiver::receive()
 
     if (not success) {
         sock.close();
-        etiLog.level(info) << "Source disconnected, reconnecting...";
         reconnect_at = chrono::steady_clock::now() + RECONNECT_DELAY;
     }
     else {
@@ -200,7 +208,7 @@ int Main::start(int argc, char **argv)
             case -1:
                 break;
             case 1: // --switch-delay
-                switch_delay = std::chrono::milliseconds(std::stoi(optarg));
+                switch_delay = chrono::milliseconds(stoi(optarg));
                 break;
             case 'm':
                 if (strcmp(optarg, "switch") == 0) {
@@ -246,14 +254,14 @@ int Main::start(int argc, char **argv)
                 edi_conf.enable_pft = false;
                 break;
             case 'f':
-                edi_conf.fec = std::stoi(optarg);
+                edi_conf.fec = stoi(optarg);
                 break;
             case 'i':
                 {
-                    int interleave_percent = std::stoi(optarg);
+                    int interleave_percent = stoi(optarg);
                     if (interleave_percent != 0) {
                         if (interleave_percent < 0) {
-                            throw std::runtime_error("EDI output: negative interleave value is invalid.");
+                            throw runtime_error("EDI output: negative interleave value is invalid.");
                         }
 
                         edi_conf.fragment_spreading_factor = (double)interleave_percent / 100.0;
@@ -267,17 +275,17 @@ int Main::start(int argc, char **argv)
                 edi_conf.verbose = true;
                 break;
             case 'a':
-                edi_conf.tagpacket_alignment = std::stoi(optarg);
+                edi_conf.tagpacket_alignment = stoi(optarg);
                 break;
             case 'b':
-                backoff = std::chrono::milliseconds(std::stoi(optarg));
+                backoff = chrono::milliseconds(stoi(optarg));
                 break;
             case 'w':
-                edisendersettings.delay_ms = std::stoi(optarg);
+                edisendersettings.delay_ms = stoi(optarg);
                 break;
             case 'x':
                 edisendersettings.drop_late = true;
-                edisendersettings.drop_delay_ms = std::stoi(optarg);
+                edisendersettings.drop_delay_ms = stoi(optarg);
                 break;
             case 'h':
             default:
@@ -312,7 +320,7 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
-    size_t num_enabled = std::count_if(sources.cbegin(), sources.cend(), [](const source_t& src) { return src.enabled; });
+    size_t num_enabled = count_if(sources.cbegin(), sources.cend(), [](const source_t& src) { return src.enabled; });
     if (num_enabled == 0) {
         etiLog.level(warn) << "Starting up with zero enabled sources. Did you forget to add a -c option?";
     }
@@ -460,8 +468,8 @@ int Main::start(int argc, char **argv)
                 running = 0;
             }
             else if (retval == -1) {
-                std::string errstr(strerror(errno));
-                throw std::runtime_error("poll() error: " + errstr);
+                string errstr(strerror(errno));
+                throw runtime_error("poll() error: " + errstr);
             }
             else if (retval > 0) {
                 for (size_t i = 0; i < num_fds; i++) {
@@ -496,12 +504,12 @@ int Main::start(int argc, char **argv)
 void Main::add_edi_destination()
 {
     if (not dest_addr_set) {
-        throw std::runtime_error("Destination address not specified for destination number " +
-                std::to_string(edi_conf.destinations.size() + 1));
+        throw runtime_error("Destination address not specified for destination number " +
+                to_string(edi_conf.destinations.size() + 1));
     }
 
     edi_conf.destinations.push_back(move(edi_destination));
-    edi_destination = std::make_shared<edi::udp_destination_t>();
+    edi_destination = make_shared<edi::udp_destination_t>();
 
     source_port_set = false;
     source_addr_set = false;
@@ -515,7 +523,7 @@ void Main::add_edi_destination()
 void Main::parse_destination_args(char option)
 {
     if (not edi_destination) {
-        edi_destination = std::make_shared<edi::udp_destination_t>();
+        edi_destination = make_shared<edi::udp_destination_t>();
     }
 
     switch (option) {
@@ -523,14 +531,14 @@ void Main::parse_destination_args(char option)
             if (dest_port_set) {
                 add_edi_destination();
             }
-            edi_destination->dest_port = std::stoi(optarg);
+            edi_destination->dest_port = stoi(optarg);
             dest_port_set = true;
             break;
         case 's':
             if (source_port_set) {
                 add_edi_destination();
             }
-            edi_destination->source_port = std::stoi(optarg);
+            edi_destination->source_port = stoi(optarg);
             source_port_set = true;
             break;
         case 'S':
@@ -544,7 +552,7 @@ void Main::parse_destination_args(char option)
             if (ttl_set) {
                 add_edi_destination();
             }
-            edi_destination->ttl = std::stoi(optarg);
+            edi_destination->ttl = stoi(optarg);
             ttl_set = true;
             break;
         case 'd':
@@ -555,7 +563,7 @@ void Main::parse_destination_args(char option)
             dest_addr_set = true;
             break;
         default:
-            throw std::logic_error("parse_destination_args invalid");
+            throw logic_error("parse_destination_args invalid");
     }
 }
 
@@ -569,13 +577,13 @@ void Main::init_rc()
 #if 0
     int flags = fcntl(rc_socket, F_GETFL);
     if (flags == -1) {
-        std::string errstr(strerror(errno));
-        throw std::runtime_error("RC socket: Could not get socket flags: " + errstr);
+        string errstr(strerror(errno));
+        throw runtime_error("RC socket: Could not get socket flags: " + errstr);
     }
 
     if (fcntl(rc_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
-        std::string errstr(strerror(errno));
-        throw std::runtime_error("RC socket: Could not set O_NONBLOCK: " + errstr);
+        string errstr(strerror(errno));
+        throw runtime_error("RC socket: Could not set O_NONBLOCK: " + errstr);
     }
 #endif
 
@@ -598,7 +606,7 @@ bool Main::handle_rc_request()
     claddr.sun_family = AF_UNIX;
     socklen_t claddr_len = sizeof(struct sockaddr_un);
 
-    std::vector<uint8_t> buf(1024);
+    vector<uint8_t> buf(1024);
     ssize_t ret = ::recvfrom(rc_socket, buf.data(), buf.size(), 0, (struct sockaddr*)&claddr, &claddr_len);
     if (ret == -1) {
         if (errno == EINTR) {
@@ -627,7 +635,7 @@ bool Main::handle_rc_request()
             ss << "}";
             response = ss.str();
         }
-        catch (const std::exception& e) {
+        catch (const exception& e) {
             response = "{\"status\": \"error\", \"cmd\": \"" + cmd + "\", \"message\": \"" + e.what() + "\"}";
         }
 
@@ -645,7 +653,7 @@ bool Main::handle_rc_request()
     }
 }
 
-std::string Main::handle_rc_command(const std::string& cmd)
+string Main::handle_rc_command(const string& cmd)
 {
     string r = "";
 
@@ -671,6 +679,7 @@ std::string Main::handle_rc_command(const std::string& cmd)
                   " \"hostname\": \"" << it->source.hostname << "\"," <<
                   " \"port\": " << it->source.port << "," <<
                   " \"last_packet_received_at\": " << rx_packet_time << "," <<
+                  " \"margin\": " << it->get_margin_ms() << "," <<
                   " \"active\": " << (it->source.active ? "true" : "false") << "," <<
                   " \"enabled\": " << (it->source.enabled ? "true" : "false");
 
@@ -755,7 +764,7 @@ std::string Main::handle_rc_command(const std::string& cmd)
         }
 
         etiLog.level(info) << "RC setting backoff to " << value;
-        backoff = std::chrono::milliseconds(value);
+        backoff = chrono::milliseconds(value);
     }
     else {
         throw runtime_error("Unknown command");
@@ -805,12 +814,12 @@ int main(int argc, char **argv)
         ret = m.start(argc, argv);
 
         // To make sure things get printed to stderr
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        this_thread::sleep_for(chrono::milliseconds(300));
     }
-    catch (const std::runtime_error &e) {
+    catch (const runtime_error &e) {
         etiLog.level(error) << "Runtime error: " << e.what();
     }
-    catch (const std::logic_error &e) {
+    catch (const logic_error &e) {
         etiLog.level(error) << "Logic error! " << e.what();
     }
 

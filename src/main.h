@@ -87,8 +87,8 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         int get_sockfd() const { return sock.get_sockfd(); }
 
         void receive();
-
         void tick();
+        int get_margin_ms() const;
 
         std::chrono::system_clock::time_point get_systime_last_packet() const
         {
@@ -110,6 +110,8 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         std::chrono::steady_clock::time_point reconnect_at = std::chrono::steady_clock::now();
         std::chrono::steady_clock::time_point most_recent_rx_time = std::chrono::steady_clock::now();
         std::chrono::system_clock::time_point most_recent_rx_systime = std::chrono::system_clock::now();
+
+        std::chrono::system_clock::duration margin = std::chrono::system_clock::duration::zero();
 
         Socket::TCPSocket sock;
 };
