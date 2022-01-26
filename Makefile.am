@@ -14,6 +14,7 @@ odr_edi2edi_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
 odr_edi2edi_CXXFLAGS =-Wall -std=c++11 $(INCLUDE) $(GITVERSION_FLAGS)
 odr_edi2edi_LDADD    = -lpthread
 odr_edi2edi_SOURCES  = src/main.h src/main.cpp \
+					   src/receiver.h src/receiver.cpp \
 					   src/EDISender.h src/EDISender.cpp \
 					   lib/crc.h lib/crc.c \
 					   lib/Globals.cpp \

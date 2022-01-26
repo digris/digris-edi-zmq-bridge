@@ -45,8 +45,6 @@ using namespace std;
 
 volatile sig_atomic_t running = 1;
 
-static constexpr auto RECONNECT_DELAY = chrono::milliseconds(24);
-
 void signal_handler(int signum)
 {
     if (signum == SIGTERM) {
@@ -70,7 +68,6 @@ static void usage()
     cerr << " -F <host:port>        Add fallback input to given host and port using TCP.\n";
     cerr << " -w <delay>            Keep every ETI frame until TIST is <delay> milliseconds after current system time.\n";
     cerr << "                       Negative delay values are also allowed.\n";
-    cerr << " -x <drop_delay>       Drop frames where for which are too late, defined by the drop delay.\n";
     cerr << " -C <path to script>   Before starting, run the given script, and only start if it returns 0.\n";
     cerr << "                       This is useful for checking that NTP is properly synchronised\n";
     cerr << " -P                    Disable PFT and send AFPackets.\n";
@@ -97,98 +94,6 @@ static const struct option longopts[] = {
     {"switch-delay", required_argument, 0, 1},
     {0, 0, 0, 0}
 };
-
-Receiver::Receiver(source_t& source, EDISender& edi_sender, bool verbose) :
-    source(source),
-    edi_sender(edi_sender),
-    edi_decoder(*this)
-{
-    edi_decoder.set_verbose(verbose);
-
-    if (source.active) {
-        etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
-        sock.connect(source.hostname, source.port, /*nonblock*/ true);
-    }
-}
-
-void Receiver::update_fc_data(const EdiDecoder::eti_fc_data& fc_data) {
-    dlfc = fc_data.dlfc;
-}
-
-void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
-    tagpacket_t tp;
-    tp.hostname = source.hostname;
-    tp.port = source.port;
-    tp.seq = tag_data.seq;
-    tp.dlfc = dlfc;
-    tp.tagpacket = move(tag_data.tagpacket);
-    tp.received_at = chrono::steady_clock::now();
-    tp.timestamp = move(tag_data.timestamp);
-    margin = tp.timestamp.to_system_clock() - chrono::system_clock::now();
-    edi_sender.push_tagpacket(move(tp));
-}
-
-void Receiver::tick()
-{
-    if (source.active) {
-        if (not sock.valid()) {
-            if (reconnect_at < chrono::steady_clock::now()) {
-                sock.connect(source.hostname, source.port, /*nonblock*/ true);
-                reconnect_at += RECONNECT_DELAY;
-            }
-        }
-    }
-    else {
-        if (sock.valid()) {
-            etiLog.level(info) << "Disconnecting from TCP " << source.hostname << ":" << source.port;
-            sock.close();
-        }
-    }
-}
-int Receiver::get_margin_ms() const {
-    if (source.active) {
-        using namespace chrono;
-        return duration_cast<milliseconds>(margin).count();
-    }
-    else {
-        return 0;
-    }
-}
-
-void Receiver::receive()
-{
-    const size_t bufsize = 32;
-    vector<uint8_t> buf(bufsize);
-    bool success = false;
-    ssize_t ret = ::recv(get_sockfd(), buf.data(), buf.size(), 0);
-    if (ret == -1) {
-        if (errno == EINTR) {
-            success = false;
-        }
-        else if (errno == ECONNREFUSED) {
-            // Behave as if disconnected
-        }
-        else {
-            string errstr(strerror(errno));
-            throw runtime_error("TCP receive after poll() error: " + errstr);
-        }
-    }
-    else if (ret > 0) {
-        buf.resize(ret);
-        edi_decoder.push_bytes(buf);
-        success = true;
-    }
-    // ret == 0 means disconnected
-
-    if (not success) {
-        sock.close();
-        reconnect_at = chrono::steady_clock::now() + RECONNECT_DELAY;
-    }
-    else {
-        most_recent_rx_systime = chrono::system_clock::now();
-        most_recent_rx_time = chrono::steady_clock::now();
-    }
-}
 
 
 int Main::start(int argc, char **argv)
@@ -233,8 +138,10 @@ int Main::start(int argc, char **argv)
                     }
 
                     const bool enabled = ch == 'c';
-                    const bool active = false; // Initialised once we know mode
-                    sources.push_back({optarg_s.substr(0, pos_colon), stoi(optarg_s.substr(pos_colon+1)), enabled, active});
+                    sources.push_back({
+                            optarg_s.substr(0, pos_colon),
+                            stoi(optarg_s.substr(pos_colon+1)),
+                            enabled});
                 }
                 break;
             case 'C':
@@ -283,10 +190,6 @@ int Main::start(int argc, char **argv)
             case 'w':
                 edisendersettings.delay_ms = stoi(optarg);
                 break;
-            case 'x':
-                edisendersettings.drop_late = true;
-                edisendersettings.drop_delay_ms = stoi(optarg);
-                break;
             case 'h':
             default:
                 usage();
@@ -330,9 +233,7 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
-    etiLog.level(info) << "Setting up EDI2EDI with delay " << edisendersettings.delay_ms << " ms. " <<
-        (edisendersettings.drop_late ? "Will" : "Will not") <<
-        " drop late packets (" << edisendersettings.drop_delay_ms << " ms)";
+    etiLog.level(info) << "Setting up EDI2EDI with delay " << edisendersettings.delay_ms << " ms. ";
 
     if (not rc_socket_name.empty()) {
         try {
@@ -347,7 +248,8 @@ int Main::start(int argc, char **argv)
 
     receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
     for (auto& source : sources) {
-        receivers.emplace_back(source, edisender, edi_conf.verbose);
+        auto callback = [&](tagpacket_t&& tp, Receiver* r) { edisender.push_tagpacket(move(tp), r); };
+        receivers.emplace_back(source, callback, edi_conf.verbose);
     }
 
 
@@ -661,8 +563,6 @@ string Main::handle_rc_command(const string& cmd)
         using namespace chrono;
         stringstream ss;
         ss << "{ \"delay\": " << edisendersettings.delay_ms <<
-            ", \"drop-late\": " << (edisendersettings.drop_late ? "true" : "false") <<
-            ", \"drop-delay\": " << edisendersettings.drop_delay_ms <<
             ", \"backoff\": " << duration_cast<milliseconds>(backoff).count() <<
             "}";
         r = ss.str();
@@ -679,9 +579,15 @@ string Main::handle_rc_command(const string& cmd)
                   " \"hostname\": \"" << it->source.hostname << "\"," <<
                   " \"port\": " << it->source.port << "," <<
                   " \"last_packet_received_at\": " << rx_packet_time << "," <<
-                  " \"margin\": " << it->get_margin_ms() << "," <<
+                  " \"connected\": " << (it->source.connected ? "true" : "false") << "," <<
                   " \"active\": " << (it->source.active ? "true" : "false") << "," <<
-                  " \"enabled\": " << (it->source.enabled ? "true" : "false");
+                  " \"enabled\": " << (it->source.enabled ? "true" : "false") << ",";
+
+            ss << " \"stats\": {" <<
+                  " \"margin\": " << it->get_margin_ms() << "," <<
+                  " \"num_late\": " << it->num_late << "," <<
+                  " \"num_connects\": " << it->source.num_connects <<
+                  " }";
 
             ++it;
             if (it == receivers.end()) {
@@ -736,26 +642,6 @@ string Main::handle_rc_command(const string& cmd)
         edisendersettings.delay_ms = value;
         edisender.update_settings(edisendersettings);
         etiLog.level(info) << "RC setting delay to " << value;
-    }
-    else if (cmd.rfind("set drop-delay ", 0) == 0) {
-        auto value = stoi(cmd.substr(15, cmd.size()));
-        if (value < -100000 or value > 100000) {
-            throw invalid_argument("delay value out of bounds +/- 100s");
-        }
-        edisendersettings.drop_delay_ms = value;
-        edisender.update_settings(edisendersettings);
-        etiLog.level(info) << "RC setting drop-delay to " << value;
-    }
-    else if (cmd.rfind("set drop-late ", 0) == 0) {
-        auto value = stoi(cmd.substr(14, cmd.size()));
-        if (value == 0 or value == 1) {
-            edisendersettings.drop_late = value;
-            edisender.update_settings(edisendersettings);
-            etiLog.level(info) << "RC setting drop-late to " << value;
-        }
-        else {
-            throw invalid_argument("value must be 0 or 1");
-        }
     }
     else if (cmd.rfind("set backoff ", 0) == 0) {
         auto value = stoi(cmd.substr(12, cmd.size()));

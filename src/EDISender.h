@@ -34,6 +34,7 @@
 #include <mutex>
 #include <list>
 #include <vector>
+#include "receiver.h"
 #include "edioutput/TagItems.h"
 #include "edioutput/TagPacket.h"
 #include "edioutput/Transport.h"
@@ -41,22 +42,8 @@
 
 static constexpr size_t MAX_PENDING_TAGPACKETS = 1000;
 
-struct tagpacket_t {
-    // source information
-    std::string hostname;
-    int port;
-
-    uint16_t dlfc;
-    std::vector<uint8_t> tagpacket;
-    EdiDecoder::frame_timestamp_t timestamp;
-    std::chrono::steady_clock::time_point received_at;
-    EdiDecoder::seq_info_t seq;
-};
-
 struct EDISenderSettings {
     int delay_ms = -500;
-    bool drop_late = false;
-    int drop_delay_ms = 0;
 };
 
 class EDISender {
@@ -67,7 +54,7 @@ class EDISender {
         ~EDISender();
         void start(const edi::configuration_t& conf, const EDISenderSettings& settings);
         void update_settings(const EDISenderSettings& settings);
-        void push_tagpacket(tagpacket_t&& tagpacket);
+        void push_tagpacket(tagpacket_t&& tagpacket, Receiver* r);
         void print_configuration(void);
 
     private:
@@ -83,6 +70,7 @@ class EDISender {
 
         // ordered by transmit timestamps
         std::list<tagpacket_t> _pending_tagpackets;
+        size_t num_queue_dropped = 0;
         mutable std::mutex _pending_tagpackets_mutex;
 
         std::shared_ptr<edi::Sender> _edi_sender;

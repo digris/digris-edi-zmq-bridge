@@ -27,7 +27,6 @@
 
 #include "EDISender.h"
 #include "Log.h"
-#include "ThreadsafeQueue.h"
 #include <cmath>
 #include <cstring>
 #include <iomanip>
@@ -35,6 +34,9 @@
 #include <map>
 #include <algorithm>
 #include <limits>
+
+// This is a remnant of the -x option
+static const bool DROP_LATE = true;
 
 using namespace std;
 
@@ -63,30 +65,60 @@ void EDISender::update_settings(const EDISenderSettings& settings)
     _settings = settings;
 }
 
-void EDISender::push_tagpacket(tagpacket_t&& tp)
+void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
 {
-    std::unique_lock<std::mutex> lock(_pending_tagpackets_mutex);
-    bool inserted = false;
-    for (auto it = _pending_tagpackets.begin(); it != _pending_tagpackets.end(); ++it) {
-        if (tp.timestamp < it->timestamp) {
-            _pending_tagpackets.insert(it, move(tp));
-            inserted = true;
-            break;
-        }
-        else if (tp.timestamp == it->timestamp) {
-            if (tp.dlfc != it->dlfc) {
-                etiLog.level(warn) << "Received packet " << tp.dlfc << " from "
-                    << tp.hostname << ":" << tp.port <<
-                    " with same timestamp but different DLFC than previous packet from "
-                    << it->hostname << ":" << it->port << " with " << it->dlfc;
-            }
+    stringstream ss;
+    ss << "EDISender ";
+    const auto t_now = chrono::system_clock::now();
+    const auto time_t_now = chrono::system_clock::to_time_t(t_now);
+    char timestr[100];
+    if (std::strftime(timestr, sizeof(timestr), "%Y-%m-%dZ%H:%M:%S", std::gmtime(&time_t_now))) {
+        ss << timestr;
+    }
 
+    using namespace chrono;
+    const auto t_frame = tp.timestamp.to_system_clock();
+    const auto t_release = t_frame + milliseconds(_settings.delay_ms);
+    const auto margin = t_release - t_now;
+    const auto margin_ms = chrono::duration_cast<chrono::milliseconds>(margin).count();
+    const bool late = t_release < t_now;
+
+    std::unique_lock<std::mutex> lock(_pending_tagpackets_mutex);
+    ss << " P " << _pending_tagpackets.size() << " dlfc  " <<
+        tp.dlfc << " margin " << margin_ms << " from " << tp.hostnames;
+
+    bool inserted = false;
+    if (not late) {
+        for (auto it = _pending_tagpackets.begin(); it != _pending_tagpackets.end(); ++it) {
+            if (tp.timestamp < it->timestamp) {
+                _pending_tagpackets.insert(it, move(tp));
+                inserted = true;
+                ss << " new";
+                break;
+            }
+            else if (tp.timestamp == it->timestamp) {
+                if (tp.dlfc != it->dlfc) {
+                    ss << " dlfc err";
+                    etiLog.level(warn) << "Received packet " << tp.dlfc << " from "
+                        << tp.hostnames <<
+                        " with same timestamp but different DLFC than previous packet from "
+                        << it->hostnames << " with " << it->dlfc;
+                }
+                else {
+                    ss << " dup";
+                    it->hostnames += ";" + tp.hostnames;
+                }
 
 #warning "TODO statistics"
 
-            inserted = true;
-            break;
+                inserted = true;
+                break;
+            }
         }
+    }
+    else {
+        ss << " late";
+        r->num_late++;
     }
 
     if (not inserted) {
@@ -95,7 +127,16 @@ void EDISender::push_tagpacket(tagpacket_t&& tp)
 
     if (_pending_tagpackets.size() > MAX_PENDING_TAGPACKETS) {
         _pending_tagpackets.pop_front();
+        num_queue_dropped++;
+        ss << " Drop ";
     }
+
+    lock.unlock();
+    ss << "\n";
+    Socket::UDPSocket udp;
+    Socket::InetAddress addr;
+    addr.resolveUdpDestination("127.0.0.1", 8008);
+    udp.send(ss.str(), addr);
 }
 
 void EDISender::print_configuration()
@@ -117,27 +158,25 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
 
     const auto t_frame = tp.timestamp.to_system_clock();
     const auto t_release = t_frame + milliseconds(_settings.delay_ms);
-    const auto t_latest_release = t_frame + milliseconds(_settings.drop_delay_ms);
     const auto t_now = system_clock::now();
 
-    const bool slightly_late = t_release < t_now;
-    const bool late = t_latest_release < t_now;
+    const bool late = t_release < t_now;
 
     buffering_stat_t stat;
-    stat.late = slightly_late;
+    stat.late = late;
 
-    if (not slightly_late) {
+    if (not late) {
         const auto wait_time = t_release - t_now;
         std::this_thread::sleep_for(wait_time);
     }
 
     const auto t_now_steady = steady_clock::now();
     stat.inhibited = t_now_steady < _output_inhibit_until;
-    stat.dropped = late and _settings.drop_late;
+    stat.dropped = late and DROP_LATE;
     stat.buffering_time_us = duration_cast<microseconds>(t_now_steady - tp.received_at).count();
     _buffering_stats.push_back(std::move(stat));
 
-    if (late and _settings.drop_late) {
+    if (late and DROP_LATE) {
         return;
     }
 
@@ -170,18 +209,16 @@ void EDISender::process()
 {
     while (_running.load()) {
         tagpacket_t tagpacket;
-        bool valid = false;
 
         {
             std::unique_lock<std::mutex> lock(_pending_tagpackets_mutex);
             if (_pending_tagpackets.size() > 0) {
                 tagpacket = _pending_tagpackets.front();
-                valid = true;
                 _pending_tagpackets.pop_front();
             }
         }
 
-        if (not valid) {
+        if (tagpacket.tagpacket.empty()) {
             this_thread::sleep_for(chrono::milliseconds(1));
             continue;
         }
