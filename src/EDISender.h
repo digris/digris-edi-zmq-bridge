@@ -57,6 +57,9 @@ class EDISender {
         void push_tagpacket(tagpacket_t&& tagpacket, Receiver* r);
         void print_configuration(void);
 
+        ssize_t get_num_queue_dropped() const { return num_queue_dropped; }
+        ssize_t get_num_dlfc_discontinuities() const { return num_dlfc_discontinuities; }
+
     private:
         void send_tagpacket(tagpacket_t& frame);
         void process(void);
@@ -68,7 +71,8 @@ class EDISender {
         std::atomic<bool> _running;
         std::thread _process_thread;
 
-        size_t num_queue_dropped = 0;
+        ssize_t num_queue_dropped = 0;
+        std::atomic<ssize_t> num_dlfc_discontinuities = ATOMIC_VAR_INIT(0);
 
         std::shared_ptr<edi::Sender> _edi_sender;
 

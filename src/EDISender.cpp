@@ -229,11 +229,11 @@ void EDISender::process()
             break;
         }
 
-        const uint16_t dlfc = tagpacket.dlfc;
-        if (prev_dlfc_valid and prev_dlfc + 1 != dlfc) {
-            cerr << "DLFC discontinuity " << prev_dlfc << " -> " << dlfc << "\n";
+        if (prev_dlfc_valid and ((prev_dlfc + 1) % 5000) != tagpacket.dlfc) {
+            cerr << "DLFC discontinuity " << prev_dlfc << " -> " << tagpacket.dlfc << "\n";
+            num_dlfc_discontinuities.fetch_add(1);
         }
-        prev_dlfc = dlfc;
+        prev_dlfc = tagpacket.dlfc;
         prev_dlfc_valid = true;
 
         send_tagpacket(tagpacket);

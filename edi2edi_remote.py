@@ -11,7 +11,7 @@ parser.add_argument('-s', '--socket', type=str, help='UNIX DGRAM socket path to 
 parser.add_argument('--get', action="store_true", help='Get and display current settings', required=False)
 parser.add_argument('-w', '--delay', type=int, help='Set the delay to the given value in milliseconds', required=False)
 parser.add_argument('-b', '--backoff', type=int, help='Set the backoff to the given value in milliseconds', required=False)
-parser.add_argument('--list-inputs', action="store_true", help='List inputs and their settings', required=False)
+parser.add_argument('--stats', action="store_true", help='List inputs settings, stats and output stats', required=False)
 
 parser.add_argument('--enable-input', type=str, help='Enable input specified by hostname:port', required=False)
 parser.add_argument('--disable-input', type=str, help='Disable input specified by hostname:port', required=False)
@@ -52,9 +52,9 @@ if cli_args.backoff:
     print(f"Setting backoff to {cli_args.backoff}", file=sys.stderr)
     send_command(f"set backoff {cli_args.backoff}")
 
-if cli_args.list_inputs:
-    print("Inputs:", file=sys.stderr)
-    send_command("list inputs")
+if cli_args.stats:
+    print("Stats:", file=sys.stderr)
+    send_command("stats")
 
 if cli_args.enable_input:
     print(f"Enabling input {cli_args.enable_input}", file=sys.stderr)

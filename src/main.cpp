@@ -567,15 +567,15 @@ string Main::handle_rc_command(const string& cmd)
             "}";
         r = ss.str();
     }
-    else if (cmd.rfind("list inputs", 0) == 0) {
+    else if (cmd.rfind("stats", 0) == 0) {
         stringstream ss;
-        ss << "[\n";
+        ss << "{ \"inputs\": [\n";
         for (auto it = receivers.begin(); it != receivers.end();) {
 
             auto rx_packet_time =
                 chrono::system_clock::to_time_t(it->get_systime_last_packet());
 
-            ss << " {" <<
+            ss << "{" <<
                   " \"hostname\": \"" << it->source.hostname << "\"," <<
                   " \"port\": " << it->source.port << "," <<
                   " \"last_packet_received_at\": " << rx_packet_time << "," <<
@@ -587,17 +587,22 @@ string Main::handle_rc_command(const string& cmd)
                   " \"margin\": " << it->get_margin_ms() << "," <<
                   " \"num_late\": " << it->num_late << "," <<
                   " \"num_connects\": " << it->source.num_connects <<
-                  " }";
+                  " } }";
 
             ++it;
             if (it == receivers.end()) {
-                ss << " }\n";
+                ss << "\n";
             }
             else {
-                ss << " },\n";
+                ss << ",\n";
             }
         }
-        ss << "]";
+        ss << "],\n";
+        ss << " \"output\": {"
+            " \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() << "," <<
+            " \"num_queue_dropped\": " << edisender.get_num_queue_dropped() <<
+            "} }";
+
         r = ss.str();
     }
     else if (cmd.rfind("set input enable ", 0) == 0) {
