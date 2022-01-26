@@ -12,6 +12,7 @@ parser.add_argument('--get', action="store_true", help='Get and display current 
 parser.add_argument('-w', '--delay', type=int, help='Set the delay to the given value in milliseconds', required=False)
 parser.add_argument('-b', '--backoff', type=int, help='Set the backoff to the given value in milliseconds', required=False)
 parser.add_argument('--stats', action="store_true", help='List inputs settings, stats and output stats', required=False)
+parser.add_argument('--live-stats-port', type=int, help='Set live stats UDP port. Use 0 to disable.', required=False)
 
 parser.add_argument('--enable-input', type=str, help='Enable input specified by hostname:port', required=False)
 parser.add_argument('--disable-input', type=str, help='Disable input specified by hostname:port', required=False)
@@ -44,11 +45,11 @@ if cli_args.get:
     print("Current settings:", file=sys.stderr)
     send_command("get settings")
 
-if cli_args.delay:
+if cli_args.delay is not None:
     print(f"Setting delay to {cli_args.delay}", file=sys.stderr)
     send_command(f"set delay {cli_args.delay}")
 
-if cli_args.backoff:
+if cli_args.backoff is not None:
     print(f"Setting backoff to {cli_args.backoff}", file=sys.stderr)
     send_command(f"set backoff {cli_args.backoff}")
 
@@ -64,3 +65,6 @@ if cli_args.disable_input:
     print(f"Disable input {cli_args.disable_input}", file=sys.stderr)
     send_command(f"set input disable {cli_args.disable_input}")
 
+if cli_args.live_stats_port is not None:
+    print(f"Set live stats port {cli_args.live_stats_port}", file=sys.stderr)
+    send_command(f"set live_stats_port {cli_args.live_stats_port}")

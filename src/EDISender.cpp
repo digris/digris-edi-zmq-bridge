@@ -137,10 +137,15 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
 
     lock.unlock();
     ss << "\n";
-    Socket::UDPSocket udp;
-    Socket::InetAddress addr;
-    addr.resolveUdpDestination("127.0.0.1", 8008);
-    udp.send(ss.str(), addr);
+    if (_settings.live_stats_port > 0) {
+        try {
+            Socket::UDPSocket udp;
+            Socket::InetAddress addr;
+            addr.resolveUdpDestination("127.0.0.1", _settings.live_stats_port);
+            udp.send(ss.str(), addr);
+        }
+        catch (const runtime_error& e) { }
+    }
 }
 
 void EDISender::print_configuration()

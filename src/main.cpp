@@ -62,36 +62,40 @@ static void usage()
 
     cerr << "Options:\n";
     cerr << "The following options can be given only once:\n";
-    cerr << " -m (merge|switch)     Choose input merging or switching mode. (default: merge)\n";
-    cerr << " --switch-delay <ms>   Set the delay after an input interruption before switching (default: " << DEFAULT_SWITCH_DELAY << " ms).\n";
-    cerr << " -c <host:port>        Connect to given host and port using TCP.\n";
-    cerr << " -F <host:port>        Add fallback input to given host and port using TCP.\n";
-    cerr << " -w <delay>            Keep every ETI frame until TIST is <delay> milliseconds after current system time.\n";
-    cerr << "                       Negative delay values are also allowed.\n";
-    cerr << " -C <path to script>   Before starting, run the given script, and only start if it returns 0.\n";
-    cerr << "                       This is useful for checking that NTP is properly synchronised\n";
-    cerr << " -P                    Disable PFT and send AFPackets.\n";
-    cerr << " -f <fec>              Set the FEC.\n";
-    cerr << " -i <interleave>       Configure the interleaver with given interleave percentage: 0% send all fragments at once, 100% spread over 24ms, >100% spread and interleave. Default 95%\n";
-    cerr << " -D                    Dump the EDI to edi.debug file.\n";
-    cerr << " -v                    Enables verbose mode.\n";
-    cerr << " -a <alignement>       Set the alignment of the TAG Packet (default 8).\n";
-    cerr << " -b <backoff>          Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
-    cerr << " -r <socket_path>      Enable UNIX DGRAM remote control socket and bind to given path\n";
-    cerr << " --version             Show the version and quit.\n\n";
+    cerr << " -m (merge|switch)         Choose input merging or switching mode. (default: merge)\n";
+    cerr << " --switch-delay <ms>       Set the delay after an input interruption before switching (default: " << DEFAULT_SWITCH_DELAY << " ms).\n";
+    cerr << " -c <host:port>            Connect to given host and port using TCP.\n";
+    cerr << " -F <host:port>            Add fallback input to given host and port using TCP.\n";
+    cerr << " -w <delay>                Keep every ETI frame until TIST is <delay> milliseconds after current system time.\n";
+    cerr << "                           Negative delay values are also allowed.\n";
+    cerr << " -C <path to script>       Before starting, run the given script, and only start if it returns 0.\n";
+    cerr << "                           This is useful for checking that NTP is properly synchronised\n";
+    cerr << " -P                        Disable PFT and send AFPackets.\n";
+    cerr << " -f <fec>                  Set the FEC.\n";
+    cerr << " -i <interleave>           Configure the interleaver with given interleave percentage: 0% send all fragments at once, 100% spread over 24ms, >100% spread and interleave. Default 95%\n";
+    cerr << " -D                        Dump the EDI to edi.debug file.\n";
+    cerr << " -v                        Enables verbose mode.\n";
+    cerr << " -a <alignement>           Set the alignment of the TAG Packet (default 8).\n";
+    cerr << " -b <backoff>              Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
+    cerr << " -r <socket_path>          Enable UNIX DGRAM remote control socket and bind to given path\n";
+    cerr << " --version                 Show the version and quit.\n\n";
 
     cerr << "The following options can be given several times, when more than UDP destination is desired:\n";
-    cerr << " -p <destination port> Set the destination port.\n";
-    cerr << " -d <destination ip>   Set the destination ip.\n";
-    cerr << " -s <source port>      Set the source port.\n";
-    cerr << " -S <source ip>        Select the source IP in case we want to use multicast.\n";
-    cerr << " -t <ttl>              Set the packet's TTL.\n\n";
+    cerr << " -p <destination port>     Set the destination port.\n";
+    cerr << " -d <destination ip>       Set the destination ip.\n";
+    cerr << " -s <source port>          Set the source port.\n";
+    cerr << " -S <source ip>            Select the source IP in case we want to use multicast.\n";
+    cerr << " -t <ttl>                  Set the packet's TTL.\n\n";
+
+    cerr << "Debugging utilities\n";
+    cerr << " --live-stats-port <port>  Send live statistics to UDP 127.0.0.1:PORT. Receive with nc -uklp PORT\n\n";
 
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
 }
 
 static const struct option longopts[] = {
     {"switch-delay", required_argument, 0, 1},
+    {"live-stats-port", required_argument, 0, 2},
     {0, 0, 0, 0}
 };
 
@@ -114,6 +118,9 @@ int Main::start(int argc, char **argv)
                 break;
             case 1: // --switch-delay
                 switch_delay = chrono::milliseconds(stoi(optarg));
+                break;
+            case 2: // --live-stats-port
+                edisendersettings.live_stats_port = stoi(optarg);
                 break;
             case 'm':
                 if (strcmp(optarg, "switch") == 0) {
@@ -564,6 +571,7 @@ string Main::handle_rc_command(const string& cmd)
         stringstream ss;
         ss << "{ \"delay\": " << edisendersettings.delay_ms <<
             ", \"backoff\": " << duration_cast<milliseconds>(backoff).count() <<
+            ", \"live_stats_port\": " << edisendersettings.live_stats_port <<
             "}";
         r = ss.str();
     }
@@ -656,6 +664,15 @@ string Main::handle_rc_command(const string& cmd)
 
         etiLog.level(info) << "RC setting backoff to " << value;
         backoff = chrono::milliseconds(value);
+    }
+    else if (cmd.rfind("set live_stats_port ", 0) == 0) {
+        auto value = stoi(cmd.substr(20, cmd.size()));
+        if (value < 0 or value > 65535) {
+            throw invalid_argument("udp_live_stats_port value out of bounds");
+        }
+        edisendersettings.live_stats_port = value;
+        edisender.update_settings(edisendersettings);
+        etiLog.level(info) << "RC setting udp_live_stats_port to " << value;
     }
     else {
         throw runtime_error("Unknown command");

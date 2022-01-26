@@ -43,6 +43,7 @@
 static constexpr size_t MAX_PENDING_TAGPACKETS = 1000;
 
 struct EDISenderSettings {
+    int live_stats_port = 0;
     int delay_ms = -500;
 };
 
