@@ -83,12 +83,18 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
     const auto margin_ms = chrono::duration_cast<chrono::milliseconds>(margin).count();
     const bool late = t_release < t_now;
 
-    std::unique_lock<std::mutex> lock(_pending_tagpackets_mutex);
+    std::unique_lock<std::mutex> lock(_mutex);
     ss << " P " << _pending_tagpackets.size() << " dlfc  " <<
         tp.dlfc << " margin " << margin_ms << " from " << tp.hostnames;
 
-    bool inserted = false;
-    if (not late) {
+    // If we receive a packet we already handed off to the other thread
+    if (_most_recent_timestamp.valid() and _most_recent_timestamp >= tp.timestamp) {
+        ss << " dup&late";
+        r->num_late++;
+    }
+    else if (not late) {
+        bool inserted = false;
+
         for (auto it = _pending_tagpackets.begin(); it != _pending_tagpackets.end(); ++it) {
             if (tp.timestamp < it->timestamp) {
                 _pending_tagpackets.insert(it, move(tp));
@@ -109,20 +115,18 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
                     it->hostnames += ";" + tp.hostnames;
                 }
 
-#warning "TODO statistics"
-
                 inserted = true;
                 break;
             }
+        }
+
+        if (not inserted) {
+            _pending_tagpackets.push_back(move(tp));
         }
     }
     else {
         ss << " late";
         r->num_late++;
-    }
-
-    if (not inserted) {
-        _pending_tagpackets.push_back(move(tp));
     }
 
     if (_pending_tagpackets.size() > MAX_PENDING_TAGPACKETS) {
@@ -162,25 +166,19 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
 
     const bool late = t_release < t_now;
 
-    buffering_stat_t stat;
-    stat.late = late;
-
     if (not late) {
         const auto wait_time = t_release - t_now;
         std::this_thread::sleep_for(wait_time);
     }
 
     const auto t_now_steady = steady_clock::now();
-    stat.inhibited = t_now_steady < _output_inhibit_until;
-    stat.dropped = late and DROP_LATE;
-    stat.buffering_time_us = duration_cast<microseconds>(t_now_steady - tp.received_at).count();
-    _buffering_stats.push_back(std::move(stat));
+    const bool inhibited = t_now_steady < _output_inhibit_until;
 
     if (late and DROP_LATE) {
         return;
     }
 
-    if (stat.inhibited) {
+    if (inhibited) {
         return;
     }
 
@@ -207,13 +205,17 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
 
 void EDISender::process()
 {
+    bool prev_dlfc_valid = false;
+    uint16_t prev_dlfc = 0;
+
     while (_running.load()) {
         tagpacket_t tagpacket;
 
         {
-            std::unique_lock<std::mutex> lock(_pending_tagpackets_mutex);
+            std::unique_lock<std::mutex> lock(_mutex);
             if (_pending_tagpackets.size() > 0) {
                 tagpacket = _pending_tagpackets.front();
+                _most_recent_timestamp = tagpacket.timestamp;
                 _pending_tagpackets.pop_front();
             }
         }
@@ -228,67 +230,12 @@ void EDISender::process()
         }
 
         const uint16_t dlfc = tagpacket.dlfc;
-        const auto tsta = tagpacket.timestamp.tsta;
-        send_tagpacket(tagpacket);
-
-        if (dlfc % 250 == 0) { // every six seconds
-            const double n = _buffering_stats.size();
-
-            size_t num_late = std::count_if(_buffering_stats.begin(), _buffering_stats.end(),
-                    [](const buffering_stat_t& s){ return s.late; });
-
-            size_t num_dropped = std::count_if(_buffering_stats.begin(), _buffering_stats.end(),
-                    [](const buffering_stat_t& s){ return s.dropped; });
-
-            size_t num_inhibited = std::count_if(_buffering_stats.begin(), _buffering_stats.end(),
-                    [](const buffering_stat_t& s){ return s.inhibited; });
-
-            double sum = 0.0;
-            double min = std::numeric_limits<double>::max();
-            double max = -std::numeric_limits<double>::max();
-            for (const auto& s : _buffering_stats) {
-                // convert to milliseconds
-                const double t = s.buffering_time_us / 1000.0;
-                sum += t;
-
-                if (t < min) {
-                    min = t;
-                }
-
-                if (t > max) {
-                    max = t;
-                }
-            }
-            double mean = sum / n;
-
-            double sq_sum = 0;
-            for (const auto& s : _buffering_stats) {
-                const double t = s.buffering_time_us / 1000.0;
-                sq_sum += (t-mean) * (t-mean);
-            }
-            double stdev = sqrt(sq_sum / n);
-
-            /* Debug code
-            stringstream ss;
-            ss << "times:";
-            for (const auto t : _buffering_stats) {
-                ss << " " << lrint(t.buffering_time_us / 1000.0);
-            }
-            etiLog.level(debug) << ss.str();
-            // */
-
-            etiLog.level(info) << "Buffering time statistics for " <<
-                _buffering_stats.size() << " frames [milliseconds]:" <<
-                " min: " << min <<
-                " max: " << max <<
-                " mean: " << mean <<
-                " stdev: " << stdev <<
-                " late: " << num_late <<
-                " dropped: " << num_dropped <<
-                " inhibited: " << num_inhibited <<
-                " Frame 0 TS " << ((double)tsta / 16384.0);
-
-            _buffering_stats.clear();
+        if (prev_dlfc_valid and prev_dlfc + 1 != dlfc) {
+            cerr << "DLFC discontinuity " << prev_dlfc << " -> " << dlfc << "\n";
         }
+        prev_dlfc = dlfc;
+        prev_dlfc_valid = true;
+
+        send_tagpacket(tagpacket);
     }
 }

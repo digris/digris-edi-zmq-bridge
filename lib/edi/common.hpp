@@ -35,7 +35,7 @@ namespace EdiDecoder {
 struct frame_timestamp_t {
     uint32_t seconds = 0;
     uint32_t utco = 0;
-    uint32_t tsta = 0; // According to EN 300 797 Annex B
+    uint32_t tsta = 0xFFFFFF; // According to EN 300 797 Annex B
 
     bool valid() const;
     std::string to_string() const;
@@ -63,8 +63,16 @@ struct frame_timestamp_t {
         return l.seconds - l.utco < r.seconds - r.utco;
     }
 
+    friend bool operator<= (const frame_timestamp_t& l, const frame_timestamp_t& r) {
+        return l < r or l == r;
+    }
+
     friend bool operator> (const frame_timestamp_t& l, const frame_timestamp_t& r) {
-        return l < r;
+        return r < l;
+    }
+
+    friend bool operator>= (const frame_timestamp_t& l, const frame_timestamp_t& r) {
+        return l > r or l == r;
     }
 };
 

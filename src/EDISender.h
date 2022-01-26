@@ -68,20 +68,13 @@ class EDISender {
         std::atomic<bool> _running;
         std::thread _process_thread;
 
-        // ordered by transmit timestamps
-        std::list<tagpacket_t> _pending_tagpackets;
         size_t num_queue_dropped = 0;
-        mutable std::mutex _pending_tagpackets_mutex;
 
         std::shared_ptr<edi::Sender> _edi_sender;
 
-        struct buffering_stat_t {
-            // Time between when we received the packets and when we transmit packets, in microseconds
-            double buffering_time_us = 0.0;
-            bool late = false;
-            bool dropped = false;
-            bool inhibited = false;
-        };
-        std::vector<buffering_stat_t> _buffering_stats;
-
+        // All fields below protected by _mutex
+        mutable std::mutex _mutex;
+        // ordered by transmit timestamps
+        std::list<tagpacket_t> _pending_tagpackets;
+        EdiDecoder::frame_timestamp_t _most_recent_timestamp;
 };
