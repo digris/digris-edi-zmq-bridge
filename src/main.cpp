@@ -608,7 +608,8 @@ string Main::handle_rc_command(const string& cmd)
         ss << "],\n";
         ss << " \"output\": {"
             " \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() << "," <<
-            " \"num_queue_dropped\": " << edisender.get_num_queue_dropped() <<
+            " \"num_queue_overruns\": " << edisender.get_num_queue_overruns() << "," <<
+            " \"num_dropped\": " << edisender.get_num_dropped() <<
             "} }";
 
         r = ss.str();

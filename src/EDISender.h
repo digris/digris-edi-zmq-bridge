@@ -58,22 +58,26 @@ class EDISender {
         void push_tagpacket(tagpacket_t&& tagpacket, Receiver* r);
         void print_configuration(void);
 
-        ssize_t get_num_queue_dropped() const { return num_queue_dropped; }
+        ssize_t get_num_dropped() const { return num_dropped; }
+        ssize_t get_num_queue_overruns() const { return num_queue_overruns; }
         ssize_t get_num_dlfc_discontinuities() const { return num_dlfc_discontinuities; }
+        ssize_t get_frame_count() const { return num_frames; }
 
     private:
         void send_tagpacket(tagpacket_t& frame);
         void process(void);
 
-        std::chrono::steady_clock::time_point _output_inhibit_until = std::chrono::steady_clock::now();
+        //std::chrono::steady_clock::time_point _output_inhibit_until = std::chrono::steady_clock::now();
 
         edi::configuration_t _edi_conf;
         EDISenderSettings _settings;
         std::atomic<bool> _running;
         std::thread _process_thread;
 
-        ssize_t num_queue_dropped = 0;
+        std::atomic<ssize_t> num_dropped = ATOMIC_VAR_INIT(0);
+        std::atomic<ssize_t> num_queue_overruns = ATOMIC_VAR_INIT(0);
         std::atomic<ssize_t> num_dlfc_discontinuities = ATOMIC_VAR_INIT(0);
+        std::atomic<ssize_t> num_frames = ATOMIC_VAR_INIT(0);
 
         std::shared_ptr<edi::Sender> _edi_sender;
 

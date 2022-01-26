@@ -131,7 +131,7 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
 
     if (_pending_tagpackets.size() > MAX_PENDING_TAGPACKETS) {
         _pending_tagpackets.pop_front();
-        num_queue_dropped++;
+        num_queue_overruns.fetch_add(1);
         ss << " Drop ";
     }
 
@@ -176,16 +176,21 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
         std::this_thread::sleep_for(wait_time);
     }
 
+    if (late and DROP_LATE) {
+        num_dropped.fetch_add(1);
+        return;
+    }
+
+#if 0
+    // TODO Maybe useful for backoff
     const auto t_now_steady = steady_clock::now();
     const bool inhibited = t_now_steady < _output_inhibit_until;
 
-    if (late and DROP_LATE) {
-        return;
-    }
-
     if (inhibited) {
+        num_dropped.fetch_add(1);
         return;
     }
+#endif
 
     if (_edi_sender and _edi_conf.enabled()) {
         edi::TagPacket edi_tagpacket(0);
@@ -205,6 +210,7 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
 
         edi_tagpacket.raw_tagpacket = move(tp.tagpacket);
         _edi_sender->write(edi_tagpacket);
+        num_frames.fetch_add(1);
     }
 }
 
