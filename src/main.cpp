@@ -619,6 +619,7 @@ string Main::handle_rc_command(const string& cmd)
         ss << " \"main\": { \"poll_timeouts\": " << num_poll_timeout << " },";
 
         ss << " \"output\": {"
+            " \"frames\": " << edisender.get_frame_count() << "," <<
             " \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() << "," <<
             " \"num_queue_overruns\": " << edisender.get_num_queue_overruns() << "," <<
             " \"num_dropped\": " << edisender.get_num_dropped() <<
