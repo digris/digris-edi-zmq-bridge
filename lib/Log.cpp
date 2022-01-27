@@ -25,6 +25,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <iomanip>
 #include <list>
 #include <cstdarg>
 #include <cinttypes>
@@ -119,7 +120,14 @@ void Logger::io_process()
             }
 
             if (m.level != log_level_t::trace) {
-                std::cerr << levels_as_str[m.level] << " " << message << std::endl;
+                using namespace std::chrono;
+                /*
+                char timestr[100];
+                if (std::strftime(timestr, sizeof(timestr), "%Y-%m-%dZ%H:%M:%S", std::gmtime(&seconds_in_unix_epoch))) {
+                }
+                */
+                time_t t = system_clock::to_time_t(system_clock::now());
+                cerr << put_time(std::gmtime(&t), "%Y-%m-%dZ%H:%M:%S") << " " << levels_as_str[m.level] << " " << message << endl;
             }
         }
     }

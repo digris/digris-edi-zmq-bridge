@@ -45,6 +45,8 @@ class Main {
         int start(int argc, char **argv);
 
     private:
+        void ensure_one_active();
+
         void add_edi_destination();
         void parse_destination_args(char option);
 
@@ -78,5 +80,7 @@ class Main {
         };
 
         Mode mode = Mode::Merging;
+
+        ssize_t num_poll_timeout = 0;
 
 };

@@ -57,6 +57,7 @@ class EDISender {
         void update_settings(const EDISenderSettings& settings);
         void push_tagpacket(tagpacket_t&& tagpacket, Receiver* r);
         void print_configuration(void);
+        void inhibit_for(std::chrono::steady_clock::duration d);
 
         ssize_t get_num_dropped() const { return num_dropped; }
         ssize_t get_num_queue_overruns() const { return num_queue_overruns; }
@@ -67,7 +68,7 @@ class EDISender {
         void send_tagpacket(tagpacket_t& frame);
         void process(void);
 
-        //std::chrono::steady_clock::time_point _output_inhibit_until = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point _output_inhibit_until = std::chrono::steady_clock::now();
 
         edi::configuration_t _edi_conf;
         EDISenderSettings _settings;

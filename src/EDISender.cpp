@@ -93,35 +93,44 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
         r->num_late++;
     }
     else if (not late) {
-        bool inserted = false;
-
-        for (auto it = _pending_tagpackets.begin(); it != _pending_tagpackets.end(); ++it) {
-            if (tp.timestamp < it->timestamp) {
-                _pending_tagpackets.insert(it, move(tp));
-                inserted = true;
-                ss << " new";
-                break;
-            }
-            else if (tp.timestamp == it->timestamp) {
-                if (tp.dlfc != it->dlfc) {
-                    ss << " dlfc err";
-                    etiLog.level(warn) << "Received packet " << tp.dlfc << " from "
-                        << tp.hostnames <<
-                        " with same timestamp but different DLFC than previous packet from "
-                        << it->hostnames << " with " << it->dlfc;
-                }
-                else {
-                    ss << " dup";
-                    it->hostnames += ";" + tp.hostnames;
-                }
-
-                inserted = true;
-                break;
-            }
+        const auto t_now_steady = steady_clock::now();
+        const bool inhibited = t_now_steady < _output_inhibit_until;
+        if (inhibited) {
+            ss << " inh";
+            _pending_tagpackets.clear();
+            num_dropped.fetch_add(1);
         }
+        else {
+            bool inserted = false;
 
-        if (not inserted) {
-            _pending_tagpackets.push_back(move(tp));
+            for (auto it = _pending_tagpackets.begin(); it != _pending_tagpackets.end(); ++it) {
+                if (tp.timestamp < it->timestamp) {
+                    _pending_tagpackets.insert(it, move(tp));
+                    inserted = true;
+                    ss << " new";
+                    break;
+                }
+                else if (tp.timestamp == it->timestamp) {
+                    if (tp.dlfc != it->dlfc) {
+                        ss << " dlfc err";
+                        etiLog.level(warn) << "Received packet " << tp.dlfc << " from "
+                            << tp.hostnames <<
+                            " with same timestamp but different DLFC than previous packet from "
+                            << it->hostnames << " with " << it->dlfc;
+                    }
+                    else {
+                        ss << " dup";
+                        it->hostnames += ";" + tp.hostnames;
+                    }
+
+                    inserted = true;
+                    break;
+                }
+            }
+
+            if (not inserted) {
+                _pending_tagpackets.push_back(move(tp));
+            }
         }
     }
     else {
@@ -158,6 +167,13 @@ void EDISender::print_configuration()
     }
 }
 
+void EDISender::inhibit_for(std::chrono::steady_clock::duration d)
+{
+    using namespace std::chrono;
+    etiLog.level(info) << "Output backoff for " << duration_cast<milliseconds>(d).count() << " ms";
+    _output_inhibit_until = steady_clock::now() + d;
+}
+
 void EDISender::send_tagpacket(tagpacket_t& tp)
 {
     // Wait until our time is tist_delay after the TIST before
@@ -181,8 +197,6 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
         return;
     }
 
-#if 0
-    // TODO Maybe useful for backoff
     const auto t_now_steady = steady_clock::now();
     const bool inhibited = t_now_steady < _output_inhibit_until;
 
@@ -190,7 +204,6 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
         num_dropped.fetch_add(1);
         return;
     }
-#endif
 
     if (_edi_sender and _edi_conf.enabled()) {
         edi::TagPacket edi_tagpacket(0);

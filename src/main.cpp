@@ -269,6 +269,10 @@ int Main::start(int argc, char **argv)
     edisender.start(edi_conf, edisendersettings);
     edisender.print_configuration();
 
+    if (mode == Mode::Switching) {
+        ensure_one_active();
+    }
+
     try {
         do {
             switch (mode) {
@@ -276,36 +280,26 @@ int Main::start(int argc, char **argv)
                     {
                         using namespace chrono;
                         const auto now = steady_clock::now();
-                        // Ensure only one input is connected
-                        size_t num_active = 0;
-                        for (auto& rx : receivers) {
-                            // Changed through RC
-                            if (rx.source.active and not rx.source.enabled) {
-                                rx.source.active = false;
-                            }
 
-                            num_active += rx.source.active ? 1 : 0;
-                        }
-
-                        if (num_active == 0) {
-                            // Activate the first enabled source
-                            for (auto& source : sources) {
-                                if (source.enabled) {
-                                    source.active = true;
-                                    break;
-                                }
-                            }
-                        }
-                        else if (num_active != 1) {
+                        if (std::count_if(receivers.cbegin(), receivers.cend(),
+                                [](const Receiver& r) { return r.source.active; }) != 1) {
                             etiLog.level(error) << "Switching error: more than one input active";
                         }
 
                         // Assumes only one active
                         for (auto rx = receivers.begin(); rx != receivers.end(); ++rx) {
-
                             if (rx->source.active) {
+                                bool force_switch = false;
+
+                                // Changed through RC
+                                if (rx->source.active and not rx->source.enabled) {
+                                    etiLog.level(info) << "Unset " << rx->source.hostname << " active ";
+                                    rx->source.active = false;
+                                    force_switch = true;
+                                }
+
                                 auto packet_age = duration_cast<milliseconds>(now - rx->get_time_last_packet());
-                                if (packet_age > switch_delay) {
+                                if (force_switch or packet_age > switch_delay) {
                                     bool switched = false;
                                     auto rx2 = rx;
                                     do {
@@ -329,10 +323,11 @@ int Main::start(int argc, char **argv)
                                         }
                                     } while (rx2 != rx);
 
-                                    if (not switched) {
-                                        etiLog.level(error) << "Failed to switch from " <<
-                                                rx->source.hostname << ":" << rx->source.port <<
-                                                " no other usable input found";
+                                    if (switched) {
+                                        edisender.inhibit_for(backoff);
+                                    }
+                                    else {
+                                        ensure_one_active();
                                     }
                                 }
                                 break;
@@ -394,7 +389,7 @@ int Main::start(int argc, char **argv)
                 }
             }
             else {
-                etiLog.level(error) << "TCP receive timeout";
+                num_poll_timeout++;
             }
         } while (running);
     }
@@ -408,6 +403,20 @@ int Main::start(int argc, char **argv)
     }
 
     return 0;
+}
+
+void Main::ensure_one_active()
+{
+    if (std::count_if(receivers.cbegin(), receivers.cend(), [](const Receiver& r) { return r.source.active; }) == 0) {
+        // Activate the first enabled source
+        for (auto& source : sources) {
+            if (source.enabled) {
+                etiLog.level(info) << "Activating first input " << source.hostname << ":" << source.port;
+                source.active = true;
+                break;
+            }
+        }
+    }
 }
 
 void Main::add_edi_destination()
@@ -606,6 +615,9 @@ string Main::handle_rc_command(const string& cmd)
             }
         }
         ss << "],\n";
+
+        ss << " \"main\": { \"poll_timeouts\": " << num_poll_timeout << " },";
+
         ss << " \"output\": {"
             " \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() << "," <<
             " \"num_queue_overruns\": " << edisender.get_num_queue_overruns() << "," <<
