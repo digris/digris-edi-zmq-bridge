@@ -299,7 +299,8 @@ int Main::start(int argc, char **argv)
                                 }
 
                                 auto packet_age = duration_cast<milliseconds>(now - rx->get_time_last_packet());
-                                if (force_switch or packet_age > switch_delay) {
+                                bool output_unhappy = not edisender.is_running_ok();
+                                if (force_switch or output_unhappy or packet_age > switch_delay) {
                                     bool switched = false;
                                     auto rx2 = rx;
                                     do {
@@ -620,6 +621,7 @@ string Main::handle_rc_command(const string& cmd)
 
         ss << " \"output\": {"
             " \"frames\": " << edisender.get_frame_count() << "," <<
+            " \"late_score\": " << edisender.get_late_score() << "," <<
             " \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() << "," <<
             " \"num_queue_overruns\": " << edisender.get_num_queue_overruns() << "," <<
             " \"num_dropped\": " << edisender.get_num_dropped() <<
@@ -687,6 +689,16 @@ string Main::handle_rc_command(const string& cmd)
         edisendersettings.live_stats_port = value;
         edisender.update_settings(edisendersettings);
         etiLog.level(info) << "RC setting udp_live_stats_port to " << value;
+    }
+    else if (cmd.rfind("reset counters", 0) == 0) {
+        num_poll_timeout = 0;
+        for (auto& rx : receivers) {
+            rx.reset_counters();
+            rx.source.reset_counters();
+        }
+
+        edisender.reset_counters();
+        etiLog.level(info) << "RC Resetting all counters";
     }
     else {
         throw runtime_error("Unknown command");

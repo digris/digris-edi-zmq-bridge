@@ -59,10 +59,18 @@ class EDISender {
         void print_configuration(void);
         void inhibit_for(std::chrono::steady_clock::duration d);
 
+        bool is_inhibited() const;
+
+        // Return true if the output is sending frames at the nominal rate, without excessive late packets
+        bool is_running_ok() const;
+
         ssize_t get_num_dropped() const { return num_dropped; }
         ssize_t get_num_queue_overruns() const { return num_queue_overruns; }
         ssize_t get_num_dlfc_discontinuities() const { return num_dlfc_discontinuities; }
         ssize_t get_frame_count() const { return num_frames; }
+        size_t get_late_score() const;
+
+        void reset_counters();
 
     private:
         void send_tagpacket(tagpacket_t& frame);
@@ -87,4 +95,12 @@ class EDISender {
         // ordered by transmit timestamps
         std::list<tagpacket_t> _pending_tagpackets;
         EdiDecoder::frame_timestamp_t _most_recent_timestamp;
+
+        // Every late packet increses the score by LATE_SCORE_INCREASE, every valid packet decreases by 1.
+        // If we reach the threshold we are not ok anymore.
+        const size_t LATE_SCORE_INCREASE = 10;
+        const size_t LATE_SCORE_THRESHOLD = 100;
+        const size_t LATE_SCORE_MAX = 200;
+        size_t late_score = 0;
+
 };

@@ -47,6 +47,8 @@ struct tagpacket_t {
 
 struct source_t {
     source_t(std::string hostname, int port, bool enabled) : hostname(hostname), port(port), enabled(enabled) {}
+    void reset_counters() { num_connects = 0; }
+
     std::string hostname;
     int port;
 
@@ -109,8 +111,9 @@ class Receiver : public EdiDecoder::ETIDataCollector {
             return most_recent_rx_time;
         }
 
-        source_t& source;
+        void reset_counters() { num_late = 0; }
 
+        source_t& source;
         ssize_t num_late = 0;
 
     private:

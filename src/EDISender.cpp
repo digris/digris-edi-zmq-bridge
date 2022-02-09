@@ -91,13 +91,13 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
     if (_most_recent_timestamp.valid() and _most_recent_timestamp >= tp.timestamp) {
         ss << " dup&late";
         r->num_late++;
+        num_dropped.fetch_add(1);
     }
     else if (not late) {
         const auto t_now_steady = steady_clock::now();
         const bool inhibited = t_now_steady < _output_inhibit_until;
         if (inhibited) {
             ss << " inh";
-            _pending_tagpackets.clear();
             num_dropped.fetch_add(1);
         }
         else {
@@ -131,11 +131,15 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
             if (not inserted) {
                 _pending_tagpackets.push_back(move(tp));
             }
+
+            if (late_score > 0) late_score--;
         }
     }
     else {
         ss << " late";
         r->num_late++;
+        late_score += LATE_SCORE_INCREASE;
+        if (late_score > LATE_SCORE_MAX) late_score = LATE_SCORE_MAX;
     }
 
     if (_pending_tagpackets.size() > MAX_PENDING_TAGPACKETS) {
@@ -172,6 +176,42 @@ void EDISender::inhibit_for(std::chrono::steady_clock::duration d)
     using namespace std::chrono;
     etiLog.level(info) << "Output backoff for " << duration_cast<milliseconds>(d).count() << " ms";
     _output_inhibit_until = steady_clock::now() + d;
+
+    {
+        std::unique_lock<std::mutex> lock(_mutex);
+        _pending_tagpackets.clear();
+        late_score = 0;
+    }
+}
+
+bool EDISender::is_inhibited() const
+{
+    const auto t_now_steady = chrono::steady_clock::now();
+    return t_now_steady < _output_inhibit_until;
+}
+
+bool EDISender::is_running_ok() const
+{
+    return late_score < LATE_SCORE_THRESHOLD;
+}
+
+size_t EDISender::get_late_score() const
+{
+    std::unique_lock<std::mutex> lock(_mutex);
+    return late_score;
+}
+
+void EDISender::reset_counters()
+{
+    num_dropped = 0;
+    num_queue_overruns = 0;
+    num_dlfc_discontinuities = 0;
+    num_frames = 0;
+
+    {
+        std::unique_lock<std::mutex> lock(_mutex);
+        late_score = 0;
+    }
 }
 
 void EDISender::send_tagpacket(tagpacket_t& tp)
