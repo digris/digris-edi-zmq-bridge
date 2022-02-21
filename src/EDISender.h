@@ -42,9 +42,12 @@
 
 static constexpr size_t MAX_PENDING_TAGPACKETS = 1000;
 
+constexpr long DEFAULT_BACKOFF = 5000;
+
 struct EDISenderSettings {
     int live_stats_port = 0;
     int delay_ms = -500;
+    std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
 };
 
 class EDISender {
@@ -57,9 +60,6 @@ class EDISender {
         void update_settings(const EDISenderSettings& settings);
         void push_tagpacket(tagpacket_t&& tagpacket, Receiver* r);
         void print_configuration(void);
-        void inhibit_for(std::chrono::steady_clock::duration d);
-
-        bool is_inhibited() const;
 
         // Return true if the output is sending frames at the nominal rate, without excessive late packets
         bool is_running_ok() const;
@@ -73,6 +73,7 @@ class EDISender {
         void reset_counters();
 
     private:
+        void inhibit();
         void send_tagpacket(tagpacket_t& frame);
         void process(void);
 

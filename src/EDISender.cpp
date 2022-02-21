@@ -171,23 +171,17 @@ void EDISender::print_configuration()
     }
 }
 
-void EDISender::inhibit_for(std::chrono::steady_clock::duration d)
+void EDISender::inhibit()
 {
     using namespace std::chrono;
-    etiLog.level(info) << "Output backoff for " << duration_cast<milliseconds>(d).count() << " ms";
-    _output_inhibit_until = steady_clock::now() + d;
+    etiLog.level(info) << "Output backoff for " << duration_cast<milliseconds>(_settings.backoff).count() << " ms";
+    _output_inhibit_until = steady_clock::now() + _settings.backoff;
 
     {
         std::unique_lock<std::mutex> lock(_mutex);
         _pending_tagpackets.clear();
         late_score = 0;
     }
-}
-
-bool EDISender::is_inhibited() const
-{
-    const auto t_now_steady = chrono::steady_clock::now();
-    return t_now_steady < _output_inhibit_until;
 }
 
 bool EDISender::is_running_ok() const
@@ -296,6 +290,7 @@ void EDISender::process()
         if (prev_dlfc_valid and ((prev_dlfc + 1) % 5000) != tagpacket.dlfc) {
             cerr << "DLFC discontinuity " << prev_dlfc << " -> " << tagpacket.dlfc << "\n";
             num_dlfc_discontinuities.fetch_add(1);
+            inhibit();
         }
         prev_dlfc = tagpacket.dlfc;
         prev_dlfc_valid = true;

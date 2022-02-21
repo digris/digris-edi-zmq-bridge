@@ -196,7 +196,7 @@ int Main::start(int argc, char **argv)
                 edi_conf.verbose = true;
                 break;
             case 'b':
-                backoff = chrono::milliseconds(stoi(optarg));
+                edisendersettings.backoff = chrono::milliseconds(stoi(optarg));
                 break;
             case 'w':
                 edisendersettings.delay_ms = stoi(optarg);
@@ -328,10 +328,7 @@ int Main::start(int argc, char **argv)
                                         }
                                     } while (rx2 != rx);
 
-                                    if (switched) {
-                                        edisender.inhibit_for(backoff);
-                                    }
-                                    else {
+                                    if (not switched) {
                                         ensure_one_active();
                                     }
                                 }
@@ -585,7 +582,7 @@ string Main::handle_rc_command(const string& cmd)
         using namespace chrono;
         stringstream ss;
         ss << "{ \"delay\": " << edisendersettings.delay_ms <<
-            ", \"backoff\": " << duration_cast<milliseconds>(backoff).count() <<
+            ", \"backoff\": " << duration_cast<milliseconds>(edisendersettings.backoff).count() <<
             ", \"live_stats_port\": " << edisendersettings.live_stats_port <<
             "}";
         r = ss.str();
@@ -683,8 +680,9 @@ string Main::handle_rc_command(const string& cmd)
             throw invalid_argument("backoff value out of bounds 0 to 100s");
         }
 
+        edisendersettings.backoff = chrono::milliseconds(value);
+        edisender.update_settings(edisendersettings);
         etiLog.level(info) << "RC setting backoff to " << value;
-        backoff = chrono::milliseconds(value);
     }
     else if (cmd.rfind("set live_stats_port ", 0) == 0) {
         auto value = stoi(cmd.substr(20, cmd.size()));

@@ -35,7 +35,6 @@
 #include "edioutput/TagPacket.h"
 #include "edioutput/Transport.h"
 
-constexpr long DEFAULT_BACKOFF = 5000;
 constexpr long DEFAULT_SWITCH_DELAY = 2000;
 
 void signal_handler(int signum);
@@ -71,7 +70,6 @@ class Main {
         std::string rc_socket_name = "";
         int rc_socket = -1;
 
-        std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
         std::chrono::steady_clock::duration switch_delay = std::chrono::milliseconds(DEFAULT_SWITCH_DELAY);
 
         enum class Mode {
