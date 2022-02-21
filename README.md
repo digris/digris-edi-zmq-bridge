@@ -14,9 +14,7 @@ Carrying EDI/UDP over the Internet will not work because of burst packet loss.
 With ODR-EDI2EDI, you can convert EDI/TCP to EDI/UDP on a small PC that is close to your device. It also allows you
 buffer the EDI and release it at a controlled point in time depending on the in-band timestamp.
 
-Every six seconds, a line with buffering time statistics is printed. If you use a process supervisor that writes this
-output to a logfile, you may use the *doc/stats_edi2edi_munin.py* script to analyse the logfile and present the
-statistics as [munin](http://munin-monitoring.org/) graphs.
+Statistics are made available through a UNIX DGRAM Socket, which also serves as remote control interface.
 
 You can also fan-out an EDI data stream to several destinations.
 
