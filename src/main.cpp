@@ -68,12 +68,11 @@ static void usage()
     cerr << "                           Negative delay values are also allowed.\n";
     cerr << " -C <path to script>       Before starting, run the given script, and only start if it returns 0.\n";
     cerr << "                           This is useful for checking that NTP is properly synchronised\n";
-    cerr << " -P                        Disable PFT and send AFPackets.\n";
-    cerr << " -f <fec>                  Set the FEC.\n";
-    cerr << " -i <interleave>           Configure the interleaver with given interleave percentage: 0% send all fragments at once, 100% spread over 24ms, >100% spread and interleave. Default 95%\n";
+    cerr << " -f <fec>                  Set the FEC, values 0, 1, 2, 3, 4, 5. 0 disables protection. Default 0\n";
+    cerr << " -i <interleave>           Configure the interleaver with given interleave percentage: 0%% send all fragments at once, 100%% spread over 24ms, >100%% spread and interleave. Default 95%%\n";
     cerr << " -D                        Dump the EDI to edi.debug file.\n";
     cerr << " -v                        Enables verbose mode.\n";
-    cerr << " -a <alignement>           Set the alignment of the TAG Packet (default 8).\n";
+    cerr << " --align <alignement>      Set the alignment of the TAG Packet (default 8).\n";
     cerr << " -b <backoff>              Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
     cerr << " -r <socket_path>          Enable UNIX DGRAM remote control socket and bind to given path\n";
     cerr << " --version                 Show the version and quit.\n\n";
@@ -92,6 +91,7 @@ static void usage()
 
     cerr << "Debugging utilities\n";
     cerr << " --live-stats-port <port>  Send live statistics to UDP 127.0.0.1:PORT. Receive with nc -uklp PORT\n\n";
+    cerr << " --disable-pft             Disable PFT and send AFPackets. (Use only when sending to localhost)\n";
 
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
 }
@@ -99,9 +99,10 @@ static void usage()
 static const struct option longopts[] = {
     {"switch-delay", required_argument, 0, 1},
     {"live-stats-port", required_argument, 0, 2},
+    {"disable-pft", no_argument, 0, 3},
+    {"align", required_argument, 0, 4},
     {0, 0, 0, 0}
 };
-
 
 int Main::start(int argc, char **argv)
 {
@@ -115,7 +116,7 @@ int Main::start(int argc, char **argv)
     int ch = 0;
     int index = 0;
     while (ch != -1) {
-        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:Pf:i:Dva:b:w:x:h", longopts, &index);
+        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:f:i:Dvb:w:x:h", longopts, &index);
         switch (ch) {
             case -1:
                 break;
@@ -124,6 +125,12 @@ int Main::start(int argc, char **argv)
                 break;
             case 2: // --live-stats-port
                 edisendersettings.live_stats_port = stoi(optarg);
+                break;
+            case 3: // --disable-pft
+                edi_conf.enable_pft = false;
+                break;
+            case 4: // --align
+                edi_conf.tagpacket_alignment = stoi(optarg);
                 break;
             case 'm':
                 if (strcmp(optarg, "switch") == 0) {
@@ -167,9 +174,6 @@ int Main::start(int argc, char **argv)
             case 'p':
                 parse_destination_args(ch);
                 break;
-            case 'P':
-                edi_conf.enable_pft = false;
-                break;
             case 'f':
                 edi_conf.fec = stoi(optarg);
                 break;
@@ -190,9 +194,6 @@ int Main::start(int argc, char **argv)
                 break;
             case 'v':
                 edi_conf.verbose = true;
-                break;
-            case 'a':
-                edi_conf.tagpacket_alignment = stoi(optarg);
                 break;
             case 'b':
                 backoff = chrono::milliseconds(stoi(optarg));
