@@ -367,7 +367,8 @@ int Main::start(int argc, char **argv)
                 num_fds++;
             }
 
-            int retval = poll(fds, num_fds, 240);
+            constexpr int POLL_TIMEOUT_FRAMES = 10;
+            int retval = poll(fds, num_fds, 24 * POLL_TIMEOUT_FRAMES);
 
             if (retval == -1 and errno == EINTR) {
                 running = 0;
@@ -390,7 +391,7 @@ int Main::start(int argc, char **argv)
                 }
             }
             else {
-                num_poll_timeout++;
+                num_poll_timeout += POLL_TIMEOUT_FRAMES;
             }
         } while (running);
     }
