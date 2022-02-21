@@ -64,8 +64,6 @@ static void usage()
     cerr << "The following options can be given only once:\n";
     cerr << " -m (merge|switch)         Choose input merging or switching mode. (default: merge)\n";
     cerr << " --switch-delay <ms>       Set the delay after an input interruption before switching (default: " << DEFAULT_SWITCH_DELAY << " ms).\n";
-    cerr << " -c <host:port>            Connect to given host and port using TCP.\n";
-    cerr << " -F <host:port>            Add fallback input to given host and port using TCP.\n";
     cerr << " -w <delay>                Keep every ETI frame until TIST is <delay> milliseconds after current system time.\n";
     cerr << "                           Negative delay values are also allowed.\n";
     cerr << " -C <path to script>       Before starting, run the given script, and only start if it returns 0.\n";
@@ -80,7 +78,12 @@ static void usage()
     cerr << " -r <socket_path>          Enable UNIX DGRAM remote control socket and bind to given path\n";
     cerr << " --version                 Show the version and quit.\n\n";
 
-    cerr << "The following options can be given several times, when more than UDP destination is desired:\n";
+    cerr << "The following options can be given several times:\n";
+    cerr << "EDI Input options\n";
+    cerr << " -c <host:port>            Add enabled input connecting to given host and port using TCP.\n";
+    cerr << " -F <host:port>            Add disabled input connecting to given host and port using TCP.\n";
+
+    cerr << "\nEDI Output options\n";
     cerr << " -p <destination port>     Set the destination port.\n";
     cerr << " -d <destination ip>       Set the destination ip.\n";
     cerr << " -s <source port>          Set the source port.\n";
