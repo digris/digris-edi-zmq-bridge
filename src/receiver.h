@@ -61,7 +61,7 @@ struct source_t {
 
     bool connected = false;
 
-    ssize_t num_connects = 0;
+    uint64_t num_connects = 0;
 };
 
 class Receiver : public EdiDecoder::ETIDataCollector {
@@ -114,7 +114,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         void reset_counters() { num_late = 0; }
 
         source_t& source;
-        ssize_t num_late = 0;
+        uint64_t num_late = 0;
 
     private:
         std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket_callback;

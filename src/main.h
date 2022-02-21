@@ -81,6 +81,6 @@ class Main {
 
         Mode mode = Mode::Merging;
 
-        size_t num_poll_timeout = 0;
+        uint64_t num_poll_timeout = 0;
 
 };

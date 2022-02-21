@@ -83,10 +83,10 @@ class EDISender {
         std::atomic<bool> _running;
         std::thread _process_thread;
 
-        std::atomic<ssize_t> num_dropped = ATOMIC_VAR_INIT(0);
-        std::atomic<ssize_t> num_queue_overruns = ATOMIC_VAR_INIT(0);
-        std::atomic<ssize_t> num_dlfc_discontinuities = ATOMIC_VAR_INIT(0);
-        std::atomic<ssize_t> num_frames = ATOMIC_VAR_INIT(0);
+        std::atomic<uint64_t> num_dropped = ATOMIC_VAR_INIT(0);
+        std::atomic<uint64_t> num_queue_overruns = ATOMIC_VAR_INIT(0);
+        std::atomic<uint64_t> num_dlfc_discontinuities = ATOMIC_VAR_INIT(0);
+        std::atomic<uint64_t> num_frames = ATOMIC_VAR_INIT(0);
 
         std::shared_ptr<edi::Sender> _edi_sender;
 
@@ -98,9 +98,9 @@ class EDISender {
 
         // Every late packet increses the score by LATE_SCORE_INCREASE, every valid packet decreases by 1.
         // If we reach the threshold we are not ok anymore.
-        const size_t LATE_SCORE_INCREASE = 10;
-        const size_t LATE_SCORE_THRESHOLD = 100;
-        const size_t LATE_SCORE_MAX = 200;
-        size_t late_score = 0;
+        const int LATE_SCORE_INCREASE = 10;
+        const int LATE_SCORE_THRESHOLD = 100;
+        const int LATE_SCORE_MAX = 200;
+        int late_score = 0;
 
 };
