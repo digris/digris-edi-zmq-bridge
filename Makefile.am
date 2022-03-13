@@ -20,8 +20,6 @@ odr_edi2edi_SOURCES  = src/main.h src/main.cpp \
 					   lib/Globals.cpp \
 					   lib/Log.h lib/Log.cpp \
 					   lib/ReedSolomon.h lib/ReedSolomon.cpp \
-					   lib/RemoteControl.h \
-					   lib/RemoteControl.cpp \
 					   lib/Socket.h lib/Socket.cpp \
 					   lib/ThreadsafeQueue.h \
 					   lib/edi/PFT.hpp lib/edi/PFT.cpp \

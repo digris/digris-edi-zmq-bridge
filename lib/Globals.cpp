@@ -28,9 +28,7 @@
 /* Ensure construction and destruction of static globals in the right order */
 
 #include "Log.h"
-#include "RemoteControl.h"
 
 // the RC needs logging, and needs to be initialised later.
 Logger etiLog;
-RemoteControllers rcs;
 
