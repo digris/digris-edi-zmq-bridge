@@ -27,6 +27,11 @@ Remote Control
 ODR-EDI2EDI contains a remote-control function that allows changing settings at runtime.
 Please see `./edi2edi_remote.py` for an example on how to use it.
 
+Example:
+
+    odr-edi2edi -r /tmp/edi2edi.socket <OTHER OPTIONS>
+    ./edi2edi_remote.py -s /tmp/edi2edi.socket --stats
+
 Statistics
 ----------
 
@@ -73,4 +78,4 @@ Contributions and Contact
 
 Contributions to this tool are welcome, you can reach users and developers through the
 [ODR-mmbTools group](https://groups.io/g/odr-mmbtools)
-or any other channels mentioned on the ODR website.
+or any other channels mentioned on the [ODR](https://www.opendigitalradio.org) website.
