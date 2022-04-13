@@ -117,8 +117,8 @@ void Receiver::receive()
             // Behave as if disconnected
         }
         else {
-            string errstr(strerror(errno));
-            throw runtime_error("TCP receive after poll() error: " + errstr);
+            etiLog.level(error) << "TCP receive () error: " << strerror(errno);
+            success = false;
         }
     }
     else if (ret > 0) {
