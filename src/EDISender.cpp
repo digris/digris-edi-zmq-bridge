@@ -291,9 +291,12 @@ void EDISender::process()
             cerr << "DLFC discontinuity " << prev_dlfc << " -> " << tagpacket.dlfc << "\n";
             num_dlfc_discontinuities.fetch_add(1);
             inhibit();
+            prev_dlfc_valid = false;
+        }
+        else {
+            prev_dlfc_valid = true;
         }
         prev_dlfc = tagpacket.dlfc;
-        prev_dlfc_valid = true;
 
         send_tagpacket(tagpacket);
     }
