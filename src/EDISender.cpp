@@ -288,7 +288,7 @@ void EDISender::process()
         }
 
         if (prev_dlfc_valid and ((prev_dlfc + 1) % 5000) != tagpacket.dlfc) {
-            cerr << "DLFC discontinuity " << prev_dlfc << " -> " << tagpacket.dlfc << "\n";
+            etiLog.level(warn) << "DLFC discontinuity " << prev_dlfc << " -> " << tagpacket.dlfc;
             num_dlfc_discontinuities.fetch_add(1);
             inhibit();
             prev_dlfc_valid = false;
