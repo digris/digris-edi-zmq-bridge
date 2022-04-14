@@ -189,6 +189,11 @@ bool EDISender::is_running_ok() const
     return late_score < LATE_SCORE_THRESHOLD;
 }
 
+bool EDISender::is_in_backoff() const
+{
+    return chrono::steady_clock::now() < _output_inhibit_until;
+}
+
 size_t EDISender::get_late_score() const
 {
     std::unique_lock<std::mutex> lock(_mutex);

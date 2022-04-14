@@ -626,7 +626,8 @@ string Main::handle_rc_command(const string& cmd)
             " \"late_score\": " << edisender.get_late_score() << "," <<
             " \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() << "," <<
             " \"num_queue_overruns\": " << edisender.get_num_queue_overruns() << "," <<
-            " \"num_dropped\": " << edisender.get_num_dropped() <<
+            " \"num_dropped\": " << edisender.get_num_dropped() << "," <<
+            " \"in_backoff\": " << (edisender.is_in_backoff() ? "true" : "false") <<
             "} }";
 
         r = ss.str();

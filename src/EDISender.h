@@ -63,6 +63,7 @@ class EDISender {
 
         // Return true if the output is sending frames at the nominal rate, without excessive late packets
         bool is_running_ok() const;
+        bool is_in_backoff() const;
 
         ssize_t get_num_dropped() const { return num_dropped; }
         ssize_t get_num_queue_overruns() const { return num_queue_overruns; }
