@@ -62,6 +62,8 @@ struct source_t {
     bool connected = false;
 
     uint64_t num_connects = 0;
+
+    int data_timeout_milliseconds = 1000;
 };
 
 class Receiver : public EdiDecoder::ETIDataCollector {

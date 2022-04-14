@@ -82,6 +82,15 @@ void Receiver::tick()
                 reconnect_at += RECONNECT_DELAY;
             }
         }
+        else {
+            const auto now = chrono::steady_clock::now();
+            if (most_recent_rx_time + chrono::milliseconds(source.data_timeout_milliseconds) < now) {
+                etiLog.level(info) << "Timeout from TCP " << source.hostname << ":" << source.port << ". Disconnecting";
+                sock.close();
+                source.connected = false;
+                m_edi_decoder.reset();
+            }
+        }
     }
     else {
         if (sock.valid()) {
