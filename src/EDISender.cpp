@@ -189,9 +189,16 @@ bool EDISender::is_running_ok() const
     return late_score < LATE_SCORE_THRESHOLD;
 }
 
-bool EDISender::is_in_backoff() const
+int EDISender::backoff_milliseconds_remaining() const
 {
-    return chrono::steady_clock::now() < _output_inhibit_until;
+    using namespace chrono;
+    const auto now = steady_clock::now();
+    if (now < _output_inhibit_until) {
+        return duration_cast<milliseconds>(now - _output_inhibit_until).count();
+    }
+    else {
+        return 0;
+    }
 }
 
 size_t EDISender::get_late_score() const

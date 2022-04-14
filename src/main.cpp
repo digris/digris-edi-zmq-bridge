@@ -619,7 +619,18 @@ string Main::handle_rc_command(const string& cmd)
         }
         ss << "],\n";
 
-        ss << " \"main\": { \"poll_timeouts\": " << num_poll_timeout << " },";
+        string modestr = "";
+        switch (mode) {
+            case Mode::Switching: modestr = "switching"; break;
+            case Mode::Merging: modestr = "merging"; break;
+        }
+
+        ss << " \"main\": {" <<
+            "\"poll_timeouts\": " << num_poll_timeout << "," <<
+            "\"mode\": \"" <<  modestr << "\"" <<
+            " },";
+
+        const auto backoff_remain = edisender.backoff_milliseconds_remaining();
 
         ss << " \"output\": {"
             " \"frames\": " << edisender.get_frame_count() << "," <<
@@ -627,7 +638,8 @@ string Main::handle_rc_command(const string& cmd)
             " \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() << "," <<
             " \"num_queue_overruns\": " << edisender.get_num_queue_overruns() << "," <<
             " \"num_dropped\": " << edisender.get_num_dropped() << "," <<
-            " \"in_backoff\": " << (edisender.is_in_backoff() ? "true" : "false") <<
+            " \"backoff_remain_ms\": " << backoff_remain << "," <<
+            " \"in_backoff\": " << (backoff_remain > 0 ? "true" : "false") <<
             "} }";
 
         r = ss.str();
