@@ -117,9 +117,10 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         uint64_t num_late = 0;
 
     private:
-        std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket_callback;
-        EdiDecoder::ETIDecoder edi_decoder;
-        uint16_t dlfc = 0;
+        std::function<void(tagpacket_t&& tagpacket, Receiver*)> m_push_tagpacket_callback;
+        std::shared_ptr<EdiDecoder::ETIDecoder> m_edi_decoder;
+        uint16_t m_dlfc = 0;
+        bool m_verbose = false;
 
         std::chrono::steady_clock::time_point reconnect_at = std::chrono::steady_clock::now();
         std::chrono::steady_clock::time_point most_recent_rx_time = std::chrono::steady_clock::time_point();
@@ -127,7 +128,5 @@ class Receiver : public EdiDecoder::ETIDataCollector {
 
         std::chrono::system_clock::duration margin = std::chrono::system_clock::duration::zero();
 
-
         Socket::TCPSocket sock;
 };
-

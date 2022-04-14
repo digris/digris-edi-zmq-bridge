@@ -47,11 +47,9 @@ static constexpr auto RECONNECT_DELAY = chrono::milliseconds(24);
 
 Receiver::Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket, bool verbose) :
     source(source),
-    push_tagpacket_callback(push_tagpacket),
-    edi_decoder(*this)
+    m_push_tagpacket_callback(push_tagpacket),
+    m_verbose(verbose)
 {
-    edi_decoder.set_verbose(verbose);
-
     if (source.active) {
         etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
         sock.connect(source.hostname, source.port, /*nonblock*/ true);
@@ -59,19 +57,19 @@ Receiver::Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket,
 }
 
 void Receiver::update_fc_data(const EdiDecoder::eti_fc_data& fc_data) {
-    dlfc = fc_data.dlfc;
+    m_dlfc = fc_data.dlfc;
 }
 
 void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
     tagpacket_t tp;
     tp.hostnames = source.hostname;
     tp.seq = tag_data.seq;
-    tp.dlfc = dlfc;
+    tp.dlfc = m_dlfc;
     tp.tagpacket = move(tag_data.tagpacket);
     tp.received_at = chrono::steady_clock::now();
     tp.timestamp = move(tag_data.timestamp);
     margin = tp.timestamp.to_system_clock() - chrono::system_clock::now();
-    push_tagpacket_callback(move(tp), this);
+    m_push_tagpacket_callback(move(tp), this);
 }
 
 void Receiver::tick()
@@ -90,6 +88,7 @@ void Receiver::tick()
             etiLog.level(info) << "Disconnecting from TCP " << source.hostname << ":" << source.port;
             sock.close();
             source.connected = false;
+            m_edi_decoder.reset();
         }
     }
 }
@@ -123,13 +122,19 @@ void Receiver::receive()
     }
     else if (ret > 0) {
         buf.resize(ret);
-        edi_decoder.push_bytes(buf);
+        if (!m_edi_decoder) {
+            m_edi_decoder = make_shared<EdiDecoder::ETIDecoder>(*this);
+            m_edi_decoder->set_verbose(m_verbose);
+        }
+
+        m_edi_decoder->push_bytes(buf);
         success = true;
     }
     // ret == 0 means disconnected
 
     if (not success) {
         sock.close();
+        m_edi_decoder.reset();
         source.connected = false;
         reconnect_at = chrono::steady_clock::now() + RECONNECT_DELAY;
     }
