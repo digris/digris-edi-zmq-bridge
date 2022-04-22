@@ -270,6 +270,12 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
+    etiLog.level(info) << "EDI inputs";
+    for (auto& source : sources) {
+        etiLog.level(info) << " " << source.hostname << ":" <<
+            source.port << " " << (source.enabled ? "enabled" : "disabled");
+    }
+
     edisender.start(edi_conf, edisendersettings);
     edisender.print_configuration();
 
