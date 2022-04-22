@@ -30,6 +30,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <poll.h>
+#include <netinet/tcp.h>
 
 namespace Socket {
 
@@ -607,6 +608,37 @@ void TCPSocket::connect(const std::string& hostname, int port, bool nonblock)
 
     if (rp == nullptr) {
         throw runtime_error("Could not connect");
+    }
+}
+
+void TCPSocket::enable_keepalive(int time, int intvl, int probes)
+{
+    if (m_sock == INVALID_SOCKET) {
+        throw std::logic_error("You may not call enable_keepalive on invalid socket");
+    }
+    int optval = 1;
+    auto optlen = sizeof(optval);
+    if (setsockopt(m_sock, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
+        std::string errstr(strerror(errno));
+        throw std::runtime_error("TCP: Could not set SO_KEEPALIVE: " + errstr);
+    }
+
+    optval = time;
+    if (setsockopt(m_sock, SOL_TCP, TCP_KEEPIDLE, &optval, optlen) < 0) {
+        std::string errstr(strerror(errno));
+        throw std::runtime_error("TCP: Could not set TCP_KEEPIDLE: " + errstr);
+    }
+
+    optval = intvl;
+    if (setsockopt(m_sock, SOL_TCP, TCP_KEEPINTVL, &optval, optlen) < 0) {
+        std::string errstr(strerror(errno));
+        throw std::runtime_error("TCP: Could not set TCP_KEEPINTVL: " + errstr);
+    }
+
+    optval = probes;
+    if (setsockopt(m_sock, SOL_TCP, TCP_KEEPCNT, &optval, optlen) < 0) {
+        std::string errstr(strerror(errno));
+        throw std::runtime_error("TCP: Could not set TCP_KEEPCNT: " + errstr);
     }
 }
 

@@ -173,6 +173,11 @@ class TCPSocket {
         void listen(int port, const std::string& name);
         void close(void);
 
+        /* Enable TCP keepalive. See
+         * https://tldp.org/HOWTO/TCP-Keepalive-HOWTO/usingkeepalive.html
+         */
+        void enable_keepalive(int time, int intvl, int probes);
+
         /* throws a runtime_error on failure, an invalid socket on timeout */
         TCPSocket accept(int timeout_ms);
 
