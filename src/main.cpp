@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <iomanip>
 #include <iterator>
 #include <memory>
 #include <thread>
@@ -609,10 +610,15 @@ string Main::handle_rc_command(const string& cmd)
                   " \"active\": " << (it->source.active ? "true" : "false") << "," <<
                   " \"enabled\": " << (it->source.enabled ? "true" : "false") << ",";
 
+            const auto most_recent_connect_error = it->get_last_connection_error();
+            const auto err_time = chrono::system_clock::to_time_t(most_recent_connect_error.timestamp);
+
             ss << " \"stats\": {" <<
                   " \"margin\": " << it->get_margin_ms() << "," <<
                   " \"num_late\": " << it->num_late << "," <<
-                  " \"num_connects\": " << it->source.num_connects <<
+                  " \"num_connects\": " << it->source.num_connects << "," <<
+                  " \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) << ","
+                  " \"most_recent_connect_error_timestamp\": " << err_time <<
                   " } }";
 
             ++it;

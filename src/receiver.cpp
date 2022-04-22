@@ -48,7 +48,7 @@ static constexpr int KA_TIME = 10; // Start keepalive after this period (seconds
 static constexpr int KA_INTVL = 2; // Interval between keepalives (seconds)
 static constexpr int KA_PROBES = 3; // Number of keepalives before connection considered broken
 
-static constexpr auto RECONNECT_DELAY = chrono::milliseconds(24);
+static constexpr auto RECONNECT_DELAY = chrono::milliseconds(480);
 
 Receiver::Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket, bool verbose) :
     source(source),
@@ -57,8 +57,14 @@ Receiver::Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket,
 {
     if (source.active) {
         etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
-        sock.connect(source.hostname, source.port, /*nonblock*/ true);
-        sock.enable_keepalive(KA_TIME, KA_INTVL, KA_PROBES);
+        try {
+            sock.connect(source.hostname, source.port, /*nonblock*/ true);
+            sock.enable_keepalive(KA_TIME, KA_INTVL, KA_PROBES);
+        }
+        catch (const runtime_error& e) {
+            m_most_recent_connect_error.message = e.what();
+            m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
+        }
     }
 }
 
@@ -83,8 +89,14 @@ void Receiver::tick()
     if (source.active) {
         if (not sock.valid()) {
             if (reconnect_at < chrono::steady_clock::now()) {
-                sock.connect(source.hostname, source.port, /*nonblock*/ true);
-                sock.enable_keepalive(KA_TIME, KA_INTVL, KA_PROBES);
+                try {
+                    sock.connect(source.hostname, source.port, /*nonblock*/ true);
+                    sock.enable_keepalive(KA_TIME, KA_INTVL, KA_PROBES);
+                }
+                catch (const runtime_error& e) {
+                    m_most_recent_connect_error.message = e.what();
+                    m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
+                }
                 // Mark connected = true only on successful data receive because of nonblock=true
                 reconnect_at += RECONNECT_DELAY;
             }

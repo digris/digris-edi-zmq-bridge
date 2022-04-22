@@ -1,4 +1,4 @@
-# Copyright (C) 2020 Matthias P. Braendli, http://opendigitalradio.org
+# Copyright (C) 2022 Matthias P. Braendli, http://opendigitalradio.org
 
 if IS_GIT_REPO
 GITVERSION_FLAGS = -DGITVERSION="\"`git describe --dirty || echo 'unknown'`\""
@@ -11,7 +11,7 @@ bin_PROGRAMS=odr-edi2edi
 INCLUDE=-Ilib
 
 odr_edi2edi_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
-odr_edi2edi_CXXFLAGS =-Wall -std=c++11 $(INCLUDE) $(GITVERSION_FLAGS)
+odr_edi2edi_CXXFLAGS =-Wall -std=c++14 $(INCLUDE) $(GITVERSION_FLAGS)
 odr_edi2edi_LDADD    = -lpthread
 odr_edi2edi_SOURCES  = src/main.h src/main.cpp \
 					   src/receiver.h src/receiver.cpp \
