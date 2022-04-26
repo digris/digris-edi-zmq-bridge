@@ -50,10 +50,10 @@ static constexpr int KA_PROBES = 3; // Number of keepalives before connection co
 
 static constexpr auto RECONNECT_DELAY = chrono::milliseconds(480);
 
-Receiver::Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket, bool verbose) :
+Receiver::Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket, int verbosity) :
     source(source),
     m_push_tagpacket_callback(push_tagpacket),
-    m_verbose(verbose)
+    m_verbosity(verbosity)
 {
     if (source.active) {
         etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
@@ -94,6 +94,10 @@ void Receiver::tick()
                     sock.enable_keepalive(KA_TIME, KA_INTVL, KA_PROBES);
                 }
                 catch (const runtime_error& e) {
+                    if (m_verbosity > 0) {
+                        etiLog.level(debug) << "Connecting to " << source.hostname << ":" << source.port <<
+                            " failed: " << e.what();
+                    }
                     m_most_recent_connect_error.message = e.what();
                     m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
                 }
@@ -111,6 +115,7 @@ void Receiver::tick()
         }
     }
 }
+
 int Receiver::get_margin_ms() const {
     if (source.active) {
         using namespace chrono;
@@ -133,6 +138,9 @@ void Receiver::receive()
         }
         else if (errno == ECONNREFUSED) {
             // Behave as if disconnected
+            if (m_verbosity > 0) {
+                etiLog.level(debug) << "Receive from " << source.hostname << ":" << source.port << ": Connection refused";
+            }
         }
         else {
             etiLog.level(error) << "TCP receive () error: " << strerror(errno);
@@ -143,7 +151,7 @@ void Receiver::receive()
         buf.resize(ret);
         if (!m_edi_decoder) {
             m_edi_decoder = make_shared<EdiDecoder::ETIDecoder>(*this);
-            m_edi_decoder->set_verbose(m_verbose);
+            m_edi_decoder->set_verbose(m_verbosity > 1);
         }
 
         m_edi_decoder->push_bytes(buf);
@@ -152,6 +160,9 @@ void Receiver::receive()
     // ret == 0 means disconnected
 
     if (not success) {
+        if (m_verbosity > 0) {
+            etiLog.level(debug) << "Remote " << source.hostname << ":" << source.port << " closed connection";
+        }
         sock.close();
         m_edi_decoder.reset();
         source.connected = false;
@@ -161,9 +172,19 @@ void Receiver::receive()
         most_recent_rx_systime = chrono::system_clock::now();
         most_recent_rx_time = chrono::steady_clock::now();
         if (not source.connected) {
+            if (m_verbosity > 0) {
+                etiLog.level(debug) << "Connection to " << source.hostname << ":" << source.port << " reestablished";
+            }
             source.num_connects++;
         }
         source.connected = true;
     }
 }
 
+void Receiver::set_verbosity(int verbosity)
+{
+    m_verbosity = verbosity;
+    if (m_edi_decoder) {
+        m_edi_decoder->set_verbose(m_verbosity > 1);
+    }
+}

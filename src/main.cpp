@@ -72,7 +72,7 @@ static void usage()
     cerr << " -f <fec>                  Set the FEC, values 0, 1, 2, 3, 4, 5. 0 disables protection. Default 0\n";
     cerr << " -i <interleave>           Configure the interleaver with given interleave percentage: 0%% send all fragments at once, 100%% spread over 24ms, >100%% spread and interleave. Default 95%%\n";
     cerr << " -D                        Dump the EDI to edi.debug file.\n";
-    cerr << " -v                        Enables verbose mode.\n";
+    cerr << " -v                        Increase verbosity (Can be given more than once).\n";
     cerr << " --align <alignement>      Set the alignment of the TAG Packet (default 8).\n";
     cerr << " -b <backoff>              Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
     cerr << " -r <socket_path>          Enable UNIX DGRAM remote control socket and bind to given path\n";
@@ -194,7 +194,7 @@ int Main::start(int argc, char **argv)
                 edi_conf.dump = true;
                 break;
             case 'v':
-                edi_conf.verbose = true;
+                verbosity++;
                 break;
             case 'b':
                 edisendersettings.backoff = chrono::milliseconds(stoi(optarg));
@@ -208,6 +208,8 @@ int Main::start(int argc, char **argv)
                 return 1;
         }
     }
+
+    edi_conf.verbose = verbosity > 1;
 
     if (not startupcheck.empty()) {
         etiLog.level(info) << "Running startup check '" << startupcheck << "'";
@@ -261,7 +263,7 @@ int Main::start(int argc, char **argv)
     receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
     for (auto& source : sources) {
         auto callback = [&](tagpacket_t&& tp, Receiver* r) { edisender.push_tagpacket(move(tp), r); };
-        receivers.emplace_back(source, callback, edi_conf.verbose);
+        receivers.emplace_back(source, callback, verbosity);
     }
 
 
@@ -591,6 +593,7 @@ string Main::handle_rc_command(const string& cmd)
         ss << "{ \"delay\": " << edisendersettings.delay_ms <<
             ", \"backoff\": " << duration_cast<milliseconds>(edisendersettings.backoff).count() <<
             ", \"live_stats_port\": " << edisendersettings.live_stats_port <<
+            ", \"verbosity\": " << verbosity <<
             "}";
         r = ss.str();
     }
@@ -603,22 +606,22 @@ string Main::handle_rc_command(const string& cmd)
                 chrono::system_clock::to_time_t(it->get_systime_last_packet());
 
             ss << "{" <<
-                  " \"hostname\": \"" << it->source.hostname << "\"," <<
-                  " \"port\": " << it->source.port << "," <<
-                  " \"last_packet_received_at\": " << rx_packet_time << "," <<
-                  " \"connected\": " << (it->source.connected ? "true" : "false") << "," <<
-                  " \"active\": " << (it->source.active ? "true" : "false") << "," <<
-                  " \"enabled\": " << (it->source.enabled ? "true" : "false") << ",";
+                  " \"hostname\": \"" << it->source.hostname << "\"" <<
+                  ", \"port\": " << it->source.port <<
+                  ", \"last_packet_received_at\": " << rx_packet_time <<
+                  ", \"connected\": " << (it->source.connected ? "true" : "false") <<
+                  ", \"active\": " << (it->source.active ? "true" : "false") <<
+                  ", \"enabled\": " << (it->source.enabled ? "true" : "false");
 
             const auto most_recent_connect_error = it->get_last_connection_error();
             const auto err_time = chrono::system_clock::to_time_t(most_recent_connect_error.timestamp);
 
-            ss << " \"stats\": {" <<
-                  " \"margin\": " << it->get_margin_ms() << "," <<
-                  " \"num_late\": " << it->num_late << "," <<
-                  " \"num_connects\": " << it->source.num_connects << "," <<
-                  " \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) << ","
-                  " \"most_recent_connect_error_timestamp\": " << err_time <<
+            ss << ", \"stats\": {" <<
+                  " \"margin\": " << it->get_margin_ms() <<
+                  ", \"num_late\": " << it->num_late <<
+                  ", \"num_connects\": " << it->source.num_connects <<
+                  ", \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) <<
+                  ", \"most_recent_connect_error_timestamp\": " << err_time <<
                   " } }";
 
             ++it;
@@ -638,20 +641,20 @@ string Main::handle_rc_command(const string& cmd)
         }
 
         ss << " \"main\": {" <<
-            "\"poll_timeouts\": " << num_poll_timeout << "," <<
-            "\"mode\": \"" <<  modestr << "\"" <<
+            "\"poll_timeouts\": " << num_poll_timeout <<
+            ", \"mode\": \"" <<  modestr << "\"" <<
             " },";
 
         const auto backoff_remain = edisender.backoff_milliseconds_remaining();
 
         ss << " \"output\": {"
-            " \"frames\": " << edisender.get_frame_count() << "," <<
-            " \"late_score\": " << edisender.get_late_score() << "," <<
-            " \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() << "," <<
-            " \"num_queue_overruns\": " << edisender.get_num_queue_overruns() << "," <<
-            " \"num_dropped\": " << edisender.get_num_dropped() << "," <<
-            " \"backoff_remain_ms\": " << backoff_remain << "," <<
-            " \"in_backoff\": " << (backoff_remain > 0 ? "true" : "false") <<
+            " \"frames\": " << edisender.get_frame_count() <<
+            ", \"late_score\": " << edisender.get_late_score() <<
+            ", \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() <<
+            ", \"num_queue_overruns\": " << edisender.get_num_queue_overruns() <<
+            ", \"num_dropped\": " << edisender.get_num_dropped() <<
+            ", \"backoff_remain_ms\": " << backoff_remain <<
+            ", \"in_backoff\": " << (backoff_remain > 0 ? "true" : "false") <<
             "} }";
 
         r = ss.str();
@@ -717,6 +720,19 @@ string Main::handle_rc_command(const string& cmd)
         edisendersettings.live_stats_port = value;
         edisender.update_settings(edisendersettings);
         etiLog.level(info) << "RC setting udp_live_stats_port to " << value;
+    }
+    else if (cmd.rfind("set verbose ", 0) == 0) {
+        auto value = stoi(cmd.substr(12, cmd.size()));
+        if (value < 0 or value > 3) {
+            throw invalid_argument("verbosity value out of bounds 0 to 3");
+        }
+
+        verbosity = value;
+        edi_conf.verbose = verbosity > 1;
+        for (auto& rx : receivers) {
+            rx.set_verbosity(verbosity);
+        }
+        etiLog.level(info) << "RC setting verbosity to " << value;
     }
     else if (cmd.rfind("reset counters", 0) == 0) {
         num_poll_timeout = 0;

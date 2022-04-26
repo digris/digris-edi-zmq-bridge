@@ -66,7 +66,7 @@ struct source_t {
 
 class Receiver : public EdiDecoder::ETIDataCollector {
     public:
-        Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket, bool verbose);
+        Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket, int verbosity);
         Receiver(const Receiver&) = delete;
         Receiver operator=(const Receiver&) = delete;
         Receiver(Receiver&&) = default;
@@ -126,11 +126,13 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         source_t& source;
         uint64_t num_late = 0;
 
+        void set_verbosity(int verbosity);
+
     private:
         std::function<void(tagpacket_t&& tagpacket, Receiver*)> m_push_tagpacket_callback;
         std::shared_ptr<EdiDecoder::ETIDecoder> m_edi_decoder;
         uint16_t m_dlfc = 0;
-        bool m_verbose = false;
+        int m_verbosity;
 
         connection_error_t m_most_recent_connect_error;
 

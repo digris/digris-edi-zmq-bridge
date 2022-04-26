@@ -11,6 +11,7 @@ parser.add_argument('-s', '--socket', type=str, help='UNIX DGRAM socket path to 
 parser.add_argument('--get', action="store_true", help='Get and display current settings', required=False)
 parser.add_argument('-w', '--delay', type=int, help='Set the delay to the given value in milliseconds', required=False)
 parser.add_argument('-b', '--backoff', type=int, help='Set the backoff to the given value in milliseconds', required=False)
+parser.add_argument('-v', '--verbose', type=int, help='Set verbosity', required=False)
 parser.add_argument('--stats', action="store_true", help='List inputs settings, stats and output stats', required=False)
 parser.add_argument('--live-stats-port', type=int, help='Set live stats UDP port. Use 0 to disable.', required=False)
 parser.add_argument('--reset-counters', action="store_true", help='Reset all statistics counters', required=False)
@@ -53,6 +54,10 @@ if cli_args.delay is not None:
 if cli_args.backoff is not None:
     print(f"Setting backoff to {cli_args.backoff}", file=sys.stderr)
     send_command(f"set backoff {cli_args.backoff}")
+
+if cli_args.verbose is not None:
+    print(f"Setting verbose to {cli_args.verbose}", file=sys.stderr)
+    send_command(f"set verbose {cli_args.verbose}")
 
 if cli_args.stats:
     print("Stats:", file=sys.stderr)

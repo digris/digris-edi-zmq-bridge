@@ -247,8 +247,13 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
     const bool inhibited = t_now_steady < _output_inhibit_until;
 
     if (inhibited) {
+        _show_backoff_ended_message = true;
         num_dropped.fetch_add(1);
         return;
+    }
+    else if (_show_backoff_ended_message) {
+        _show_backoff_ended_message = false;
+        etiLog.level(info) << "Output backoff ended";
     }
 
     if (_edi_sender and _edi_conf.enabled()) {

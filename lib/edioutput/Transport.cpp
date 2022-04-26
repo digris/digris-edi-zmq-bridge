@@ -135,9 +135,10 @@ void Sender::write(const AFPacket& af_packet)
         // Apply PFT layer to AF Packet (Reed Solomon FEC and Fragmentation)
         vector<edi::PFTFragment> edi_fragments = edi_pft.Assemble(af_packet);
 
-        if (m_conf.verbose) {
-            fprintf(stderr, "EDI Output: Number of PFT fragments %zu\n",
+        if (m_conf.verbose and m_last_num_pft_fragments != edi_fragments.size()) {
+            etiLog.log(debug, "EDI Output: Number of PFT fragments %zu\n",
                     edi_fragments.size());
+            m_last_num_pft_fragments = edi_fragments.size();
         }
 
         /* Spread out the transmission of all fragments over part of the 24ms AF packet duration

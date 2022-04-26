@@ -105,4 +105,6 @@ class EDISender {
         const int LATE_SCORE_MAX = 200;
         int late_score = 0;
 
+        bool _show_backoff_ended_message = false;
+
 };

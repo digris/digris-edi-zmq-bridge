@@ -67,6 +67,8 @@ class Main {
         EDISenderSettings edisendersettings;
         EDISender edisender;
 
+        int verbosity = 0;
+
         std::string rc_socket_name = "";
         int rc_socket = -1;
 

@@ -90,6 +90,8 @@ class Sender {
         std::mutex m_mutex;
         bool m_running = false;
         std::map<std::chrono::steady_clock::time_point, edi::PFTFragment> m_pending_frames;
+
+        size_t m_last_num_pft_fragments = 0;
 };
 
 }
