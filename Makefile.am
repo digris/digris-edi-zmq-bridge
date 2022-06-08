@@ -6,15 +6,25 @@ else
 GITVERSION_FLAGS =
 endif
 
-bin_PROGRAMS=odr-edi2edi
+bin_PROGRAMS=odr-edi2edi odr-edimcast2edi
+noinst_LIBRARIES = libedi2edi.a
 
 INCLUDE=-Ilib
 
 odr_edi2edi_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
 odr_edi2edi_CXXFLAGS =-Wall -std=c++14 $(INCLUDE) $(GITVERSION_FLAGS)
-odr_edi2edi_LDADD    = -lpthread
-odr_edi2edi_SOURCES  = src/main.h src/main.cpp \
-					   src/receiver.h src/receiver.cpp \
+odr_edi2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
+odr_edi2edi_SOURCES  = src/main.h src/main.cpp
+
+odr_edimcast2edi_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
+odr_edimcast2edi_CXXFLAGS =-Wall -std=c++14 $(INCLUDE) $(GITVERSION_FLAGS)
+odr_edimcast2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
+odr_edimcast2edi_SOURCES  = src/edimcast2edi.cpp \
+							src/EDIReceiver.hpp src/EDIReceiver.cpp
+
+libedi2edi_a_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
+libedi2edi_a_CXXFLAGS =-Wall -std=c++14 $(INCLUDE) $(GITVERSION_FLAGS)
+libedi2edi_a_SOURCES  = src/receiver.h src/receiver.cpp \
 					   src/EDISender.h src/EDISender.cpp \
 					   lib/crc.h lib/crc.c \
 					   lib/Globals.cpp \

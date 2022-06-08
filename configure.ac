@@ -1,20 +1,21 @@
-# Copyright (C) 2021 Matthias P. Braendli, http://opendigitalradio.org
+# Copyright (C) 2022 Matthias P. Braendli, http://opendigitalradio.org
 
-
-AC_PREREQ(2.69)
-AC_INIT([ODR-EDI2EDI], [0.4.0], [matthias.braendli@mpb.li])
+AC_PREREQ([2.69])
+AC_INIT([ODR-EDI2EDI],[0.4.0],[matthias.braendli@mpb.li])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
-AC_CANONICAL_SYSTEM
+AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE([-Wall foreign subdir-objects])
 AC_CONFIG_SRCDIR([src/main.cpp])
-AC_CONFIG_HEADER([config.h])
+AC_CONFIG_HEADERS([config.h])
 AM_SILENT_RULES([yes])
 
 # Checks for programs.
+AM_PROG_AR
 AC_PROG_CXX
 AC_PROG_CC
 AM_PROG_CC_C_O
+AC_PROG_RANLIB
 AC_PROG_INSTALL
 
 AX_CXX_COMPILE_STDCXX(14,noext,mandatory)
@@ -23,7 +24,9 @@ AX_CXX_COMPILE_STDCXX(14,noext,mandatory)
 AX_PTHREAD([], AC_MSG_ERROR([requires pthread]))
 
 # Checks for header files.
-AC_HEADER_STDC
+AC_CHECK_INCLUDES_DEFAULT
+AC_PROG_EGREP
+
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netdb.h netinet/in.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h])
 
 AC_LANG_PUSH([C++])
@@ -53,7 +56,24 @@ AC_COMPILE_IFELSE([ AC_LANG_PROGRAM([[
                      AC_DEFINE(HAVE_SO_NOSIGPIPE, 1, [Define this symbol if you have SO_NOSIGPIPE]) ],
                    [ AC_MSG_RESULT(no) ])
 
+# On some platforms, std::atomic needs a helper library
+AC_MSG_CHECKING(whether -latomic is needed)
+AC_LINK_IFELSE([AC_LANG_SOURCE([[
+  #include <atomic>
+  #include <cstdint>
+  std::atomic<std::int64_t> v;
+  int main() {
+    return v;
+  }
+]])], STD_ATOMIC_NEED_LIBATOMIC=no, STD_ATOMIC_NEED_LIBATOMIC=yes)
+AC_MSG_RESULT($STD_ATOMIC_NEED_LIBATOMIC)
+if test "x$STD_ATOMIC_NEED_LIBATOMIC" = xyes; then
+  LIBATOMIC_LIBS="-latomic"
+fi
+AC_SUBST([LIBATOMIC_LIBS])
+
 AC_LANG_POP([C++])
+
 
 AM_CONDITIONAL([IS_GIT_REPO], [test -d '.git'])
 
