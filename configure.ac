@@ -24,7 +24,7 @@ AX_CXX_COMPILE_STDCXX(14,noext,mandatory)
 AX_PTHREAD([], AC_MSG_ERROR([requires pthread]))
 
 # Checks for header files.
-AC_CHECK_INCLUDES_DEFAULT
+#AC_CHECK_INCLUDES_DEFAULT
 AC_PROG_EGREP
 
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netdb.h netinet/in.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h])
