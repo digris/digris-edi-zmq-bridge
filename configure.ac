@@ -1,5 +1,4 @@
 # Copyright (C) 2022 Matthias P. Braendli, http://opendigitalradio.org
-
 AC_PREREQ([2.69])
 AC_INIT([ODR-EDI2EDI],[0.4.0],[matthias.braendli@mpb.li])
 AC_CONFIG_AUX_DIR([build-aux])
@@ -24,7 +23,6 @@ AX_CXX_COMPILE_STDCXX(14,noext,mandatory)
 AX_PTHREAD([], AC_MSG_ERROR([requires pthread]))
 
 # Checks for header files.
-#AC_CHECK_INCLUDES_DEFAULT
 AC_PROG_EGREP
 
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netdb.h netinet/in.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h])
