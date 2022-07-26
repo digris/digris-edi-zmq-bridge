@@ -37,6 +37,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include "Log.h"
@@ -526,6 +527,12 @@ void Main::init_rc()
     int ret = ::bind(rc_socket, (const struct sockaddr *) &claddr, sizeof(struct sockaddr_un));
     if (ret == -1) {
         throw runtime_error("RC socket bind failed " + string(strerror(errno)));
+    }
+
+    // Allow user and group to write
+    ret = chmod(rc_socket_name.c_str(), S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
+    if (ret == -1) {
+        throw runtime_error("RC socket chmod failed " + string(strerror(errno)));
     }
 }
 
