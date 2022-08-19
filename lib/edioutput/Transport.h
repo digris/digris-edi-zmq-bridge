@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2020
+   Copyright (C) 2022
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
