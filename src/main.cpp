@@ -625,6 +625,7 @@ string Main::handle_rc_command(const string& cmd)
 
             ss << ", \"stats\": {" <<
                   " \"margin\": " << it->get_margin_ms() <<
+                  ", \"margin_to_delivery\": " << (it->get_margin_ms() + edisendersettings.delay_ms) <<
                   ", \"num_late\": " << it->num_late <<
                   ", \"num_connects\": " << it->source.num_connects <<
                   ", \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) <<
@@ -655,7 +656,7 @@ string Main::handle_rc_command(const string& cmd)
         const auto backoff_remain = edisender.backoff_milliseconds_remaining();
 
         ss << " \"output\": {"
-            " \"frames\": " << edisender.get_frame_count() <<
+            " \"num_frames\": " << edisender.get_frame_count() <<
             ", \"late_score\": " << edisender.get_late_score() <<
             ", \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() <<
             ", \"num_queue_overruns\": " << edisender.get_num_queue_overruns() <<

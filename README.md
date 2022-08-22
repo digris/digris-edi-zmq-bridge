@@ -44,11 +44,14 @@ Inputs:
 
  * `num_connects`: Number of times the input reconnected.
  * `num_late`: Number of frames that arrived late (taking into account -w value).
- * `margin`: (not a counter) Margin in milliseconds before  frame is late.
+ * `margin_to_delivery`: (not a counter) Margin in milliseconds before frame is too late to be delivered.
+ * `margin`: (not a counter) Margin in milliseconds before frame is too late to be modulated.
+ * `most_recent_connect_error`: A string giving the error message of the most recent connection error.
+ * `most_recent_connect_error_timestamp`: timestamp (UNIX epoch) of the most recent connection error.
 
 Outputs:
 
- * `frames`: Number of frames sent. Monitor the rate of this statistic to assess if the output is free of interruptions.
+ * `num_frames`: Number of frames sent. Monitor the rate of this statistic to assess if the output is free of interruptions.
  * `num_dlfc_discontinuities`: Number of Frame Counter value errors. Every occurrence of the discontinuity enables backoff.
  * `num_queue_overruns`: Number of times the output queue overruns. This should always stay at zero.
  * `num_dropped`: Number of frames that were dropped either because they were late, or because of backoff. In merge
