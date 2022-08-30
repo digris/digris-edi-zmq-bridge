@@ -74,6 +74,8 @@ class Main {
 
         std::chrono::steady_clock::duration switch_delay = std::chrono::milliseconds(DEFAULT_SWITCH_DELAY);
 
+        const std::chrono::steady_clock::time_point startup_time = std::chrono::steady_clock::now();
+
         enum class Mode {
             Switching,
             Merging,

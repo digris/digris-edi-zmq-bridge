@@ -592,16 +592,24 @@ bool Main::handle_rc_request()
 
 string Main::handle_rc_command(const string& cmd)
 {
+    using namespace chrono;
     string r = "";
 
     if (cmd.rfind("get settings", 0) == 0) {
-        using namespace chrono;
+
         stringstream ss;
         ss << "{ \"delay\": " << edisendersettings.delay_ms <<
             ", \"backoff\": " << duration_cast<milliseconds>(edisendersettings.backoff).count() <<
             ", \"live_stats_port\": " << edisendersettings.live_stats_port <<
             ", \"verbosity\": " << verbosity <<
-            "}";
+            ", \"mode\": \"";
+
+        switch (mode) {
+            case Mode::Switching: ss << "switching"; break;
+            case Mode::Merging: ss << "merging"; break;
+        }
+
+        ss << "\" }";
         r = ss.str();
     }
     else if (cmd.rfind("stats", 0) == 0) {
@@ -616,6 +624,7 @@ string Main::handle_rc_command(const string& cmd)
                   " \"hostname\": \"" << it->source.hostname << "\"" <<
                   ", \"port\": " << it->source.port <<
                   ", \"last_packet_received_at\": " << rx_packet_time <<
+                  ", \"connection_uptime\": " << it->connection_uptime_ms() <<
                   ", \"connected\": " << (it->source.connected ? "true" : "false") <<
                   ", \"active\": " << (it->source.active ? "true" : "false") <<
                   ", \"enabled\": " << (it->source.enabled ? "true" : "false");
@@ -642,15 +651,10 @@ string Main::handle_rc_command(const string& cmd)
         }
         ss << "],\n";
 
-        string modestr = "";
-        switch (mode) {
-            case Mode::Switching: modestr = "switching"; break;
-            case Mode::Merging: modestr = "merging"; break;
-        }
-
         ss << " \"main\": {" <<
             "\"poll_timeouts\": " << num_poll_timeout <<
-            ", \"mode\": \"" <<  modestr << "\"" <<
+            ", \"process_uptime\": " <<
+                duration_cast<milliseconds>(steady_clock::now() - startup_time).count() <<
             " },";
 
         const auto backoff_remain = edisender.backoff_milliseconds_remaining();

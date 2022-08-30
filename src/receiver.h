@@ -111,6 +111,12 @@ class Receiver : public EdiDecoder::ETIDataCollector {
             return most_recent_rx_time;
         }
 
+        uint64_t connection_uptime_ms() const
+        {
+            using namespace std::chrono;
+            return duration_cast<milliseconds>(steady_clock::now() - reconnected_at).count();
+        }
+
         struct connection_error_t {
             std::string message;
             std::chrono::system_clock::time_point timestamp;
@@ -137,6 +143,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         connection_error_t m_most_recent_connect_error;
 
         std::chrono::steady_clock::time_point reconnect_at = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point reconnected_at = std::chrono::steady_clock::now();
         std::chrono::steady_clock::time_point most_recent_rx_time = std::chrono::steady_clock::time_point();
         std::chrono::system_clock::time_point most_recent_rx_systime = std::chrono::system_clock::time_point();
 

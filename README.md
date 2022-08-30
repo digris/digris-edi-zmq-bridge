@@ -36,9 +36,10 @@ Statistics
 ----------
 
 The following stats are available through the remote control interface. Unless mentioned otherwise, they
-are all 64-bit counters.
+are all 64-bit counters, and all times are in milliseconds.
 
  * `num_poll_timeout`: Number of times the receive poll timed out for all inputs. Timeout interval: 24ms
+ * `process_uptime`: Time since process startup.
 
 Inputs:
 
@@ -46,6 +47,7 @@ Inputs:
  * `num_late`: Number of frames that arrived late (taking into account -w value).
  * `margin_to_delivery`: (not a counter) Margin in milliseconds before frame is too late to be delivered.
  * `margin`: (not a counter) Margin in milliseconds before frame is too late to be modulated.
+ * `connection_uptime`: Time since last successful connection established.
  * `most_recent_connect_error`: A string giving the error message of the most recent connection error.
  * `most_recent_connect_error_timestamp`: timestamp (UNIX epoch) of the most recent connection error.
 

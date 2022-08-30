@@ -176,6 +176,7 @@ void Receiver::receive()
                 etiLog.level(debug) << "Connection to " << source.hostname << ":" << source.port << " reestablished";
             }
             source.num_connects++;
+            reconnected_at = chrono::steady_clock::now() + RECONNECT_DELAY;
         }
         source.connected = true;
     }
