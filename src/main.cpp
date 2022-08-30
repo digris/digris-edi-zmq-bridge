@@ -106,6 +106,21 @@ static const struct option longopts[] = {
     {0, 0, 0, 0}
 };
 
+static string timepoint_to_string(const chrono::system_clock::time_point& tp)
+{
+    time_t t = chrono::system_clock::to_time_t(tp);
+
+    if (t == 0) {
+        return "";
+    }
+
+    char timestr[64];
+    if (std::strftime(timestr, sizeof(timestr), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&t)) == 0) {
+        timestr[0] = '\0';
+    }
+    return timestr;
+}
+
 int Main::start(int argc, char **argv)
 {
     edi_conf.enable_pft = true;
@@ -617,20 +632,19 @@ string Main::handle_rc_command(const string& cmd)
         ss << "{ \"inputs\": [\n";
         for (auto it = receivers.begin(); it != receivers.end();) {
 
-            auto rx_packet_time =
-                chrono::system_clock::to_time_t(it->get_systime_last_packet());
+            const auto rx_packet_time = timepoint_to_string(it->get_systime_last_packet());
 
             ss << "{" <<
                   " \"hostname\": \"" << it->source.hostname << "\"" <<
                   ", \"port\": " << it->source.port <<
-                  ", \"last_packet_received_at\": " << rx_packet_time <<
+                  ", \"last_packet_received_at\": \"" << rx_packet_time << "\"" <<
                   ", \"connection_uptime\": " << it->connection_uptime_ms() <<
                   ", \"connected\": " << (it->source.connected ? "true" : "false") <<
                   ", \"active\": " << (it->source.active ? "true" : "false") <<
                   ", \"enabled\": " << (it->source.enabled ? "true" : "false");
 
             const auto most_recent_connect_error = it->get_last_connection_error();
-            const auto err_time = chrono::system_clock::to_time_t(most_recent_connect_error.timestamp);
+            const auto err_time = timepoint_to_string(most_recent_connect_error.timestamp);
 
             ss << ", \"stats\": {" <<
                   " \"margin\": " << it->get_margin_ms() <<
@@ -638,7 +652,7 @@ string Main::handle_rc_command(const string& cmd)
                   ", \"num_late\": " << it->num_late <<
                   ", \"num_connects\": " << it->source.num_connects <<
                   ", \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) <<
-                  ", \"most_recent_connect_error_timestamp\": " << err_time <<
+                  ", \"most_recent_connect_error_timestamp\": \"" << err_time << "\"" <<
                   " } }";
 
             ++it;
