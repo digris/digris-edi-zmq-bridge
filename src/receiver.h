@@ -130,6 +130,8 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         void reset_counters() { num_late = 0; }
 
         source_t& source;
+
+        // The EDISender will update the late count
         uint64_t num_late = 0;
 
         void set_verbosity(int verbosity);

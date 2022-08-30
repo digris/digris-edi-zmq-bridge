@@ -649,7 +649,7 @@ string Main::handle_rc_command(const string& cmd)
             ss << ", \"stats\": {" <<
                   " \"margin\": " << it->get_margin_ms() <<
                   ", \"margin_to_delivery\": " << (it->get_margin_ms() + edisendersettings.delay_ms) <<
-                  ", \"num_late\": " << it->num_late <<
+                  ", \"num_late_frames\": " << it->num_late <<
                   ", \"num_connects\": " << it->source.num_connects <<
                   ", \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) <<
                   ", \"most_recent_connect_error_timestamp\": \"" << err_time << "\"" <<
@@ -678,7 +678,7 @@ string Main::handle_rc_command(const string& cmd)
             ", \"late_score\": " << edisender.get_late_score() <<
             ", \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() <<
             ", \"num_queue_overruns\": " << edisender.get_num_queue_overruns() <<
-            ", \"num_dropped\": " << edisender.get_num_dropped() <<
+            ", \"num_dropped_frames\": " << edisender.get_num_dropped() <<
             ", \"backoff_remain_ms\": " << backoff_remain <<
             ", \"in_backoff\": " << (backoff_remain > 0 ? "true" : "false") <<
             "} }";

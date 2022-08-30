@@ -44,7 +44,7 @@ are all 64-bit counters, and all times are in milliseconds.
 Inputs:
 
  * `num_connects`: Number of times the input reconnected.
- * `num_late`: Number of frames that arrived late (taking into account -w value).
+ * `num_late_frames`: Number of frames that arrived late (taking into account -w value).
  * `margin_to_delivery`: (not a counter) Margin in milliseconds before frame is too late to be delivered.
  * `margin`: (not a counter) Margin in milliseconds before frame is too late to be modulated.
  * `connection_uptime`: Time since last successful connection established.
@@ -56,7 +56,7 @@ Outputs:
  * `num_frames`: Number of frames sent. Monitor the rate of this statistic to assess if the output is free of interruptions.
  * `num_dlfc_discontinuities`: Number of Frame Counter value errors. Every occurrence of the discontinuity enables backoff.
  * `num_queue_overruns`: Number of times the output queue overruns. This should always stay at zero.
- * `num_dropped`: Number of frames that were dropped either because they were late, or because of backoff. In merge
+ * `num_dropped_frames`: Number of frames that were dropped either because they were late, or because of backoff. In merge
    mode, this includes frames that were transmitted from one input but arrived late on another input. Therefore, an
    increasing `num_dropped` value does not mean that output frames were actually missing.
  * `late_score`: (not a counter) Score between 0 and 100 indicating how often frames are late.
