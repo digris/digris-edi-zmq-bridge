@@ -646,10 +646,19 @@ string Main::handle_rc_command(const string& cmd)
             const auto most_recent_connect_error = it->get_last_connection_error();
             const auto err_time = timepoint_to_string(most_recent_connect_error.timestamp);
 
+            const auto margin_stats = it->get_margin_stats();
+
             ss << ", \"stats\": {" <<
-                  " \"margin\": " << it->get_margin_ms() <<
-                  ", \"margin_to_delivery\": " << (it->get_margin_ms() + edisendersettings.delay_ms) <<
-                  ", \"num_late_frames\": " << it->num_late <<
+                  " \"margin\": {" << std::fixed <<
+                  "   \"mean\": " << margin_stats.mean <<
+                  ",  \"min\": " << margin_stats.min <<
+                  ",  \"max\": " << margin_stats.max <<
+                  ",  \"mean_to_delivery\": " << margin_stats.mean + edisendersettings.delay_ms <<
+                  ",  \"min_to_delivery\": " << margin_stats.min + edisendersettings.delay_ms <<
+                  ",  \"max_to_delivery\": " << margin_stats.max + edisendersettings.delay_ms <<
+                  ",  \"stdev\": " << margin_stats.stdev <<
+                  ",  \"num_measurements\": " << margin_stats.num_measurements <<
+                  "}, \"num_late_frames\": " << it->num_late <<
                   ", \"num_connects\": " << it->source.num_connects <<
                   ", \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) <<
                   ", \"most_recent_connect_error_timestamp\": \"" << err_time << "\"" <<

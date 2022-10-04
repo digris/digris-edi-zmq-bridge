@@ -99,7 +99,14 @@ class Receiver : public EdiDecoder::ETIDataCollector {
 
         void receive();
         void tick();
-        int get_margin_ms() const;
+        struct margin_stats_t {
+            double min = 0.0;
+            double max = 0.0;
+            double mean = 0.0;
+            double stdev = 0.0;
+            size_t num_measurements = 0;
+        };
+        margin_stats_t get_margin_stats() const;
 
         std::chrono::system_clock::time_point get_systime_last_packet() const
         {
@@ -149,7 +156,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         std::chrono::steady_clock::time_point most_recent_rx_time = std::chrono::steady_clock::time_point();
         std::chrono::system_clock::time_point most_recent_rx_systime = std::chrono::system_clock::time_point();
 
-        std::chrono::system_clock::duration margin = std::chrono::system_clock::duration::zero();
+        std::deque<int> margins_ms;
 
         Socket::TCPSocket sock;
 };

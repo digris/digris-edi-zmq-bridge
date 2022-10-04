@@ -68,19 +68,26 @@ Receiver::Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket,
     }
 }
 
-void Receiver::update_fc_data(const EdiDecoder::eti_fc_data& fc_data) {
+void Receiver::update_fc_data(const EdiDecoder::eti_fc_data& fc_data)
+{
     m_dlfc = fc_data.dlfc;
 }
 
-void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data) {
+void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data)
+{
+    using namespace chrono;
     tagpacket_t tp;
     tp.hostnames = source.hostname;
     tp.seq = tag_data.seq;
     tp.dlfc = m_dlfc;
     tp.tagpacket = move(tag_data.tagpacket);
-    tp.received_at = chrono::steady_clock::now();
+    tp.received_at = steady_clock::now();
     tp.timestamp = move(tag_data.timestamp);
-    margin = tp.timestamp.to_system_clock() - chrono::system_clock::now();
+    const auto margin = tp.timestamp.to_system_clock() - system_clock::now();
+    margins_ms.push_back(duration_cast<milliseconds>(margin).count());
+    if (margins_ms.size() > 2500 /* 1 minute */) {
+        margins_ms.pop_front();
+    }
     m_push_tagpacket_callback(move(tp), this);
 }
 
@@ -116,14 +123,38 @@ void Receiver::tick()
     }
 }
 
-int Receiver::get_margin_ms() const {
-    if (source.active) {
-        using namespace chrono;
-        return duration_cast<milliseconds>(margin).count();
+Receiver::margin_stats_t Receiver::get_margin_stats() const
+{
+    margin_stats_t r;
+
+    if (source.active and margins_ms.size() > 0) {
+        r.num_measurements = margins_ms.size();
+        const double n = r.num_measurements;
+        double sum = 0.0;
+        r.min = std::numeric_limits<double>::max();
+        r.max = -std::numeric_limits<double>::max();
+
+        for (const double t : margins_ms) {
+            sum += t;
+
+            if (t < r.min) {
+                r.min = t;
+            }
+
+            if (t > r.max) {
+                r.max = t;
+            }
+        }
+        r.mean = sum / n;
+
+        double sq_sum = 0;
+        for (const double t : margins_ms) {
+            sq_sum += (t-r.mean) * (t-r.mean);
+        }
+        r.stdev = sqrt(sq_sum / n);
     }
-    else {
-        return 0;
-    }
+
+    return r;
 }
 
 void Receiver::receive()
