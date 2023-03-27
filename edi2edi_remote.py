@@ -2,7 +2,6 @@
 import argparse
 import json
 import os
-import pprint
 import socket
 import sys
 
@@ -48,33 +47,32 @@ if cli_args.get:
     send_command("get settings")
 
 if cli_args.delay is not None:
-    print(f"Setting delay to {cli_args.delay}", file=sys.stderr)
-    send_command(f"set delay {cli_args.delay}")
+    print("Setting delay to {}".format(cli_args.delay), file=sys.stderr)
+    send_command("set delay {}".format(cli_args.delay))
 
 if cli_args.backoff is not None:
-    print(f"Setting backoff to {cli_args.backoff}", file=sys.stderr)
-    send_command(f"set backoff {cli_args.backoff}")
+    print("Setting backoff to {}".format(cli_args.backoff), file=sys.stderr)
+    send_command("set backoff {}".format(cli_args.backoff))
 
 if cli_args.verbose is not None:
-    print(f"Setting verbose to {cli_args.verbose}", file=sys.stderr)
-    send_command(f"set verbose {cli_args.verbose}")
+    print("Setting verbose to {}".format(cli_args.verbose), file=sys.stderr)
+    send_command("set verbose {}".format(cli_args.verbose))
 
 if cli_args.stats:
     print("Stats:", file=sys.stderr)
     send_command("stats")
 
 if cli_args.enable_input:
-    print(f"Enabling input {cli_args.enable_input}", file=sys.stderr)
-    send_command(f"set input enable {cli_args.enable_input}")
+    print("Enabling input {}".format(cli_args.enable_input), file=sys.stderr)
+    send_command("set input enable {}".format(cli_args.enable_input))
 
 if cli_args.disable_input:
-    print(f"Disable input {cli_args.disable_input}", file=sys.stderr)
-    send_command(f"set input disable {cli_args.disable_input}")
+    print("Disable input {}".format(cli_args.disable_input), file=sys.stderr)
+    send_command("set input disable {}".format(cli_args.disable_input))
 
 if cli_args.live_stats_port is not None:
-    print(f"Set live stats port {cli_args.live_stats_port}", file=sys.stderr)
-    send_command(f"set live_stats_port {cli_args.live_stats_port}")
-
+    print("Set live stats port {}".format(cli_args.live_stats_port), file=sys.stderr)
+    send_command("set live_stats_port {}".format(cli_args.live_stats_port))
 
 if cli_args.reset_counters:
     print("Resetting counters", file=sys.stderr)
