@@ -71,7 +71,7 @@ static void usage()
     cerr << " -C <path to script>       Before starting, run the given script, and only start if it returns 0.\n";
     cerr << "                           This is useful for checking that NTP is properly synchronised\n";
     cerr << " -f <fec>                  Set the FEC, values 0, 1, 2, 3, 4, 5. 0 disables protection. Default 0\n";
-    cerr << " -i <interleave>           Configure the interleaver with given interleave percentage: 0%% send all fragments at once, 100%% spread over 24ms, >100%% spread and interleave. Default 95%%\n";
+    cerr << " -i <interleave>           Configure the interleaver with given interleave percentage: 0 send all fragments at once, 100 spread over 24ms, >100 spread and interleave. Default 95\n";
     cerr << " -D                        Dump the EDI to edi.debug file.\n";
     cerr << " -v                        Increase verbosity (Can be given more than once).\n";
     cerr << " --align <alignement>      Set the alignment of the TAG Packet (default 8).\n";
