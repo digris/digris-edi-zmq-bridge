@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2022
+   Copyright (C) 2024
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -38,8 +38,8 @@ struct tagpacket_t {
     // source information
     std::string hostnames;
 
+    std::vector<uint8_t> afpacket;
     uint16_t dlfc;
-    std::vector<uint8_t> tagpacket;
     EdiDecoder::frame_timestamp_t timestamp;
     std::chrono::steady_clock::time_point received_at;
     EdiDecoder::seq_info_t seq;

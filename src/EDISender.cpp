@@ -105,7 +105,7 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
 
             for (auto it = _pending_tagpackets.begin(); it != _pending_tagpackets.end(); ++it) {
                 if (tp.timestamp < it->timestamp) {
-                    _pending_tagpackets.insert(it, move(tp));
+                    _pending_tagpackets.insert(it, std::move(tp));
                     inserted = true;
                     ss << " new";
                     break;
@@ -129,7 +129,7 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
             }
 
             if (not inserted) {
-                _pending_tagpackets.push_back(move(tp));
+                _pending_tagpackets.push_back(std::move(tp));
             }
 
             if (late_score > 0) late_score--;
@@ -272,7 +272,12 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
             _edi_sender->override_pft_sequence(tp.seq.seq);
         }
 
-        edi_tagpacket.raw_tagpacket = move(tp.tagpacket);
+        if (not tp.afpacket.empty()) {
+            copy(tp.afpacket.begin() + EdiDecoder::AFPACKET_HEADER_LEN,
+                    tp.afpacket.end(),
+                    edi_tagpacket.raw_tagpacket.begin());
+        }
+
         _edi_sender->write(edi_tagpacket);
         num_frames.fetch_add(1);
     }
@@ -295,7 +300,7 @@ void EDISender::process()
             }
         }
 
-        if (tagpacket.tagpacket.empty()) {
+        if (tagpacket.afpacket.empty()) {
             this_thread::sleep_for(chrono::milliseconds(1));
             continue;
         }

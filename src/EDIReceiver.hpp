@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2022
+   Copyright (C) 2024
    Matthias P. Braendli, matthias.braendli@mpb.li
 
    http://opendigitalradio.org
@@ -21,8 +21,8 @@
 #pragma once
 
 #include "edi/common.hpp"
+#include "edioutput/Transport.h"
 #include <cstdint>
-#include <deque>
 #include <string>
 #include <vector>
 
@@ -32,7 +32,7 @@ class EDIReceiver {
     public:
         using subchannel_handler = std::function<void(std::vector<uint8_t>&&, frame_timestamp_t, uint16_t /*dlfc*/)>;
 
-        EDIReceiver();
+        EDIReceiver(edi::Sender& sender);
 
         void set_verbose(bool verbose);
 
@@ -46,18 +46,23 @@ class EDIReceiver {
          */
         void setMaxDelay(int num_af_packets);
 
-        std::vector<uint8_t> received_tagpackets;
+        std::atomic<size_t> num_frames = ATOMIC_VAR_INIT(0);
 
     private:
         void packet_completed();
-        void tagpacket_handler(const std::vector<uint8_t>& tagpacket);
 
         std::string m_protocol = "";
 
         bool decode_starptr(const std::vector<uint8_t>& value, const tag_name_t& n);
         bool decode_stardmy(const std::vector<uint8_t>&, const tag_name_t&);
+        bool decode_deti(const std::vector<uint8_t>& value, const tag_name_t& n);
+        bool decode_estn(const std::vector<uint8_t>& value, const tag_name_t& n);
 
         TagDispatcher m_dispatcher;
+
+        bool handle_afpacket(std::vector<uint8_t>&& value);
+
+        edi::Sender& m_sender;
 };
 
 }

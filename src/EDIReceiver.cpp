@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2022
+   Copyright (C) 2024
    Matthias P. Braendli, matthias.braendli@mpb.li
 
    http://opendigitalradio.org
@@ -20,25 +20,28 @@
  */
 #include "EDIReceiver.hpp"
 #include "Log.h"
-#include <cstdio>
-#include <cassert>
-#include <sstream>
 
 namespace EdiDecoder {
 
 using namespace std;
 
-EDIReceiver::EDIReceiver() :
-    m_dispatcher(std::bind(&EDIReceiver::packet_completed, this))
+EDIReceiver::EDIReceiver(edi::Sender& sender) :
+    m_dispatcher(std::bind(&EDIReceiver::packet_completed, this)),
+    m_sender(sender)
 {
     using std::placeholders::_1;
     using std::placeholders::_2;
+    // Register these tags to avoid the "unknown TAG" warning message
     m_dispatcher.register_tag("*ptr",
             std::bind(&EDIReceiver::decode_starptr, this, _1, _2));
+    m_dispatcher.register_tag("deti",
+            std::bind(&EDIReceiver::decode_deti, this, _1, _2));
+    m_dispatcher.register_tag("est",
+            std::bind(&EDIReceiver::decode_estn, this, _1, _2));
     m_dispatcher.register_tag("*dmy",
             std::bind(&EDIReceiver::decode_stardmy, this, _1, _2));
 
-    m_dispatcher.register_tagpacket_handler(std::bind(&EDIReceiver::tagpacket_handler, this, _1));
+    m_dispatcher.register_afpacket_handler(std::bind(&EDIReceiver::handle_afpacket, this, _1));
 }
 
 void EDIReceiver::set_verbose(bool verbose)
@@ -78,6 +81,16 @@ bool EDIReceiver::decode_starptr(const std::vector<uint8_t>& value, const tag_na
     return true;
 }
 
+bool EDIReceiver::decode_deti(const std::vector<uint8_t>&, const tag_name_t&)
+{
+    return true;
+}
+
+bool EDIReceiver::decode_estn(const std::vector<uint8_t>&, const tag_name_t&)
+{
+    return true;
+}
+
 bool EDIReceiver::decode_stardmy(const std::vector<uint8_t>&, const tag_name_t&)
 {
     return true;
@@ -90,9 +103,26 @@ void EDIReceiver::packet_completed()
     }
 }
 
-void EDIReceiver::tagpacket_handler(const std::vector<uint8_t>& tagpacket)
+bool EDIReceiver::handle_afpacket(std::vector<uint8_t>&& value)
 {
-    move(tagpacket.begin(), tagpacket.end(), received_tagpackets.end());
+#if 0
+    const auto seq = m_dispatcher.get_seq_info();
+    if (seq.seq_valid) {
+        m_sender.override_af_sequence(seq.seq);
+    }
+
+    if (seq.pseq_valid) {
+        m_sender.override_pft_sequence(seq.pseq);
+    }
+    else if (seq.seq_valid) {
+        // If the source isn't using PFT, set PSEQ = SEQ, for consistency
+        m_sender.override_pft_sequence(seq.seq);
+    }
+#endif
+
+    m_sender.write(std::move(value));
+    num_frames.fetch_add(1);
+    return true;
 }
 
 }

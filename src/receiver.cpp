@@ -80,15 +80,15 @@ void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data)
     tp.hostnames = source.hostname;
     tp.seq = tag_data.seq;
     tp.dlfc = m_dlfc;
-    tp.tagpacket = move(tag_data.tagpacket);
+    tp.afpacket = std::move(tag_data.afpacket);
     tp.received_at = steady_clock::now();
-    tp.timestamp = move(tag_data.timestamp);
+    tp.timestamp = std::move(tag_data.timestamp);
     const auto margin = tp.timestamp.to_system_clock() - system_clock::now();
     margins_ms.push_back(duration_cast<milliseconds>(margin).count());
     if (margins_ms.size() > 2500 /* 1 minute */) {
         margins_ms.pop_front();
     }
-    m_push_tagpacket_callback(move(tp), this);
+    m_push_tagpacket_callback(std::move(tp), this);
 }
 
 void Receiver::tick()

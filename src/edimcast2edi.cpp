@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2022
+   Copyright (C) 2024
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -126,6 +126,8 @@ int main(int argc, char **argv)
     while (ch != -1) {
         ch = getopt_long(argc, argv, "b:l:m:p:v", longopts, &index);
         switch (ch) {
+            case -1:
+                break;
             case 2: // --live-stats-port
                 //int live_stats_port = stoi(optarg);
                 break;
@@ -136,7 +138,7 @@ int main(int argc, char **argv)
                 {
                     auto edi_destination = make_shared<edi::tcp_server_t>();
                     edi_destination->listen_port = stoi(optarg);
-                    edi_conf.destinations.push_back(move(edi_destination));
+                    edi_conf.destinations.push_back(std::move(edi_destination));
                 }
                 break;
             case 'm':
@@ -181,7 +183,7 @@ int main(int argc, char **argv)
 
         Socket::UDPReceiver rx;
 
-        EdiDecoder::EDIReceiver edi_rx;
+        EdiDecoder::EDIReceiver edi_rx(edi_sender);
 
         rx.add_receive_port(rx_port, rx_bindto, rx_mcastaddr);
 
@@ -199,34 +201,11 @@ int main(int argc, char **argv)
             for (auto& rp : rx_packets) {
                 auto received_from = rp.received_from;
                 EdiDecoder::Packet p;
-                p.buf = move(rp.packetdata);
+                p.buf = std::move(rp.packetdata);
                 p.received_on_port = rp.port_received_on;
                 edi_rx.push_packet(p);
             }
         }
-
-        /*
-        if (edi_conf.enabled()) {
-            edi::TagPacket edi_tagpacket(0);
-
-            if (tp.seq.seq_valid) {
-                _edi_sender->override_af_sequence(tp.seq.seq);
-            }
-
-            if (tp.seq.pseq_valid) {
-                _edi_sender->override_pft_sequence(tp.seq.pseq);
-            }
-            else if (tp.seq.seq_valid) {
-                // If the source isn't using PFT, set PSEQ = SEQ so that multihoming
-                // with several EDI2EDI instances could work.
-                _edi_sender->override_pft_sequence(tp.seq.seq);
-            }
-
-            edi_tagpacket.raw_tagpacket = move(tp.tagpacket);
-            _edi_sender->write(edi_tagpacket);
-            num_frames.fetch_add(1);
-        }
-        */
         // To make sure things get printed to stderr
         this_thread::sleep_for(chrono::milliseconds(300));
     }

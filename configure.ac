@@ -17,7 +17,7 @@ AM_PROG_CC_C_O
 AC_PROG_RANLIB
 AC_PROG_INSTALL
 
-AX_CXX_COMPILE_STDCXX(14,noext,mandatory)
+AX_CXX_COMPILE_STDCXX(17,noext,mandatory)
 
 # Checks for libraries.
 AX_PTHREAD([], AC_MSG_ERROR([requires pthread]))
