@@ -21,16 +21,12 @@
    along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <algorithm>
 #include <chrono>
 #include <iostream>
-#include <iomanip>
-#include <iterator>
 #include <memory>
 #include <thread>
 #include <vector>
-#include <unordered_map>
-#include <cmath>
+#include <optional>
 #include <cstring>
 #include <fcntl.h>
 #include <getopt.h>
@@ -45,6 +41,7 @@
 #include "edioutput/TagPacket.h"
 #include "edioutput/Transport.h"
 #include "EDIReceiver.hpp"
+#include "mpe_deframer.hpp"
 
 using namespace std;
 
@@ -66,13 +63,14 @@ static void usage()
     cerr << "odr-edimcast2edi [options]\n\n";
     cerr << "Receive EDI over multicast, remove PFT layer and make AF layer available as TCP server\n\n";
 
-    cerr << " -v            Increase verbosity (Can be given more than once).\n";
-    cerr << " --version      the version and quit.\n\n";
+    cerr << " -v             Increase verbosity (Can be given more than once).\n";
+    cerr << " --version      Print the version and quit.\n\n";
 
     cerr << "Input settings\n";
-    cerr << " -p PORT       Receive UDP on PORT\n";
-    cerr << " -b BINDTO     Bind receive socket to BINDTO address\n";
-    cerr << " -m ADDRESS    Receive from multicast ADDRESS\n\n";
+    cerr << " -p PORT        Receive UDP on PORT\n";
+    cerr << " -b BINDTO      Bind receive socket to BINDTO address\n";
+    cerr << " -m ADDRESS     Receive from multicast ADDRESS\n";
+    cerr << " -F PID:IP:PORT Decode MPE like fedi2eti\n\n";
 
     cerr << "Output settings\n";
     cerr << " -l PORT       Listen on port PORT\n\n";
@@ -81,7 +79,7 @@ static void usage()
 }
 
 static const struct option longopts[] = {
-    {"live-stats-port", required_argument, 0, 2},
+    //{"live-stats-port", required_argument, 0, 2},
     {0, 0, 0, 0}
 };
 
@@ -121,15 +119,20 @@ int main(int argc, char **argv)
     string rx_bindto;
     string rx_mcastaddr;
 
+    std::optional<MPEDeframer> mpe_deframer;
+
     int ch = 0;
     int index = 0;
     while (ch != -1) {
-        ch = getopt_long(argc, argv, "b:l:m:p:v", longopts, &index);
+        ch = getopt_long(argc, argv, "b:F:l:m:p:v", longopts, &index);
         switch (ch) {
             case -1:
                 break;
             case 2: // --live-stats-port
                 //int live_stats_port = stoi(optarg);
+                break;
+            case 'F':
+                mpe_deframer = MPEDeframer(optarg);
                 break;
             case 'b':
                 rx_bindto = optarg;
@@ -198,12 +201,25 @@ int main(int argc, char **argv)
             catch (const Socket::UDPReceiver::Timeout&) {
             }
 
-            for (auto& rp : rx_packets) {
-                auto received_from = rp.received_from;
-                EdiDecoder::Packet p;
-                p.buf = std::move(rp.packetdata);
-                p.received_on_port = rp.port_received_on;
-                edi_rx.push_packet(p);
+            if (mpe_deframer) {
+                for (auto& rp : rx_packets) {
+                    mpe_deframer->process_ts(rp.packetdata);
+                }
+
+                for (auto& deframed : mpe_deframer->get_deframed_packets()) {
+                    EdiDecoder::Packet p;
+                    p.buf = std::move(deframed);
+                    p.received_on_port = 0;
+                    edi_rx.push_packet(p);
+                }
+            }
+            else {
+                for (auto& rp : rx_packets) {
+                    EdiDecoder::Packet p;
+                    p.buf = std::move(rp.packetdata);
+                    p.received_on_port = rp.port_received_on;
+                    edi_rx.push_packet(p);
+                }
             }
         }
         // To make sure things get printed to stderr
