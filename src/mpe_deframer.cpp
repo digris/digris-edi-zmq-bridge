@@ -63,7 +63,7 @@ void MPEDeframer::process_packet(const std::vector<uint8_t>& udp_packet)
     }
 
     for (size_t i = 0; i < udp_packet.size(); i += TS_PACKET_SIZE) {
-        process_ts(udp_packet.data() + i*TS_PACKET_SIZE);
+        process_ts(udp_packet.data() + i);
     }
 }
 
