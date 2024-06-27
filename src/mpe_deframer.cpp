@@ -54,15 +54,21 @@ MPEDeframer::MPEDeframer(const std::string& triplet)
     m_debug = getenv("DEBUG") ? 1 : 0;
 }
 
-void MPEDeframer::process_ts(const std::vector<uint8_t>& mpeg_ts_packet)
+void MPEDeframer::process_packet(const std::vector<uint8_t>& udp_packet)
 {
-    if (mpeg_ts_packet.size() != TS_PACKET_SIZE) {
-        fprintf(stderr, "Ignoring MPEG-TS packet of size %zu\n", mpeg_ts_packet.size());
+    if (udp_packet.size() % TS_PACKET_SIZE != 0) {
+        fprintf(stderr, "UDP packet size %zu not multiple of %d\n",
+                udp_packet.size(), TS_PACKET_SIZE);
         return;
     }
 
-    const uint8_t *ts = mpeg_ts_packet.data();
+    for (size_t i = 0; i < udp_packet.size(); i += TS_PACKET_SIZE) {
+        process_ts(udp_packet.data() + i*TS_PACKET_SIZE);
+    }
+}
 
+void MPEDeframer::process_ts(const uint8_t *ts)
+{
     if (not(TS_IS_SYNC(ts) && TS_GET_PID(ts) == m_pid)) {
         return;
     }

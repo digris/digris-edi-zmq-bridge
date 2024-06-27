@@ -203,7 +203,7 @@ int main(int argc, char **argv)
 
             if (mpe_deframer) {
                 for (auto& rp : rx_packets) {
-                    mpe_deframer->process_ts(rp.packetdata);
+                    mpe_deframer->process_packet(rp.packetdata);
                 }
 
                 for (auto& deframed : mpe_deframer->get_deframed_packets()) {

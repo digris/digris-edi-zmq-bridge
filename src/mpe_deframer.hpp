@@ -72,11 +72,12 @@ class MPEDeframer {
 public:
     MPEDeframer(const std::string& triplet);
 
-    void process_ts(const std::vector<uint8_t>& mpeg_ts_packet);
+    void process_packet(const std::vector<uint8_t>& udp_packet);
 
     std::vector<std::vector<uint8_t> > get_deframed_packets();
 
 private:
+    void process_ts(const uint8_t *ts);
     void extract_edi();
 
     std::vector<std::vector<uint8_t> > m_extracted_frames;
