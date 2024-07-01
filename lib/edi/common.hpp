@@ -135,7 +135,7 @@ class TagDispatcher {
          */
         void register_tag(const std::string& tag, tag_handler&& h);
 
-        /* The complete tagpacket can also be retrieved */
+        /* The complete AF packet can also be retrieved */
         using afpacket_handler = std::function<void(std::vector<uint8_t>&&)>;
         void register_afpacket_handler(afpacket_handler&& h);
 
