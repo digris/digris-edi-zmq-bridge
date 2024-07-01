@@ -37,11 +37,10 @@
 #include <unistd.h>
 #include "Log.h"
 #include "main.h"
-#include "edioutput/TagItems.h"
-#include "edioutput/TagPacket.h"
 #include "edioutput/Transport.h"
 #include "EDIReceiver.hpp"
 #include "mpe_deframer.hpp"
+
 
 using namespace std;
 
@@ -52,6 +51,9 @@ void signal_handler(int signum)
     if (signum == SIGTERM) {
         fprintf(stderr, "Received SIGTERM\n");
         exit(0);
+    }
+    else {
+        fprintf(stderr, "Received signal %d\n", signum);
     }
     //killpg(0, SIGPIPE);
     running = 0;
@@ -116,7 +118,7 @@ int main(int argc, char **argv)
     edi_conf.enable_pft = false;
 
     unsigned int rx_port = 0;
-    string rx_bindto;
+    string rx_bindto = "0.0.0.0";
     string rx_mcastaddr;
 
     std::optional<MPEDeframer> mpe_deframer;
@@ -232,6 +234,8 @@ int main(int argc, char **argv)
         etiLog.level(error) << "Logic error! " << e.what();
     }
 
+    // Ensure stderr log gets written
+    this_thread::sleep_for(chrono::milliseconds(50));
     return ret;
 }
 
