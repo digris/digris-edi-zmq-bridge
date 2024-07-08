@@ -9,24 +9,22 @@
     http://www.opendigitalradio.org
    */
 /*
-   This file is part of ODR-DabMux.
+   This file is part of the ODR-mmbTools.
 
-   ODR-DabMux is free software: you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as
-   published by the Free Software Foundation, either version 3 of the
-   License, or (at your option) any later version.
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-   ODR-DabMux is distributed in the hope that it will be useful,
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with ODR-DabMux.  If not, see <http://www.gnu.org/licenses/>.
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "Log.h"
-#include "zmq.hpp"
 #include <getopt.h>
 #include <cmath>
 #include <cstring>
@@ -36,8 +34,10 @@
 #include <thread>
 #include <vector>
 
+#include "common.h"
+#include "Log.h"
 #include "Sender.h"
-#include "zmq2edi/dabOutputZMQ.h"
+#include "zmq/dabOutputZMQ.h"
 
 constexpr size_t MAX_ERROR_COUNT = 10;
 constexpr long ZMQ_TIMEOUT_MS = 1000;
@@ -52,9 +52,8 @@ static void usage()
     using namespace std;
 
     cerr << "Usage:" << endl;
-    cerr << "odr-zmq2edi [options] <source>" << endl << endl;
-
-    cerr << "ODR-ZMQ2EDI can output to both EDI and ZMQ. It buffers and releases frames according to their timestamp." << endl;
+    cerr << "digris-zmq-converter [options] <source>" << endl << endl;
+    cerr << "DIGRIS-ZMQ-CONVERTER can receive ZMQ and output to both EDI and ZMQ. It buffers and releases frames according to their timestamp." << endl;
 
     cerr << "Options:" << endl;
     cerr << "The following options can be given only once:" << endl;
@@ -499,14 +498,14 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    etiLog.level(info) << "ZMQ2EDI converter from " <<
+    std::cerr << "digris-zmq-converter from " <<
         PACKAGE_NAME << " " <<
 #if defined(GITVERSION)
         GITVERSION <<
 #else
         PACKAGE_VERSION <<
 #endif
-        " starting up";
+        " starting up\n" << BANNER_MESSAGE;
 
     int ret = 1;
 

@@ -41,7 +41,8 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include "Log.h"
-#include "main.h"
+#include "common.h"
+#include "edi2edi.h"
 
 using namespace std;
 
@@ -60,7 +61,7 @@ void signal_handler(int signum)
 static void usage()
 {
     cerr << "\nUsage:\n";
-    cerr << "odr-edi2edi [options] -c <source>\n\n";
+    cerr << "digris-edi2edi [options] -c <source>\n\n";
 
     cerr << "Options:\n";
     cerr << "The following options can be given only once:\n";
@@ -800,13 +801,13 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    cerr << "ODR-EDI2EDI " <<
+    cerr << "DIGRIS-EDI2EDI " <<
 #if defined(GITVERSION)
         GITVERSION <<
 #else
         PACKAGE_VERSION <<
 #endif
-        " starting up" << endl;
+        " starting up\n" << BANNER_MESSAGE;
 
     int ret = 1;
 

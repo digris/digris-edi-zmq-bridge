@@ -6,35 +6,35 @@ else
 GITVERSION_FLAGS =
 endif
 
-bin_PROGRAMS=odr-edi2edi odr-edimcast2edi odr-zmq2edi
+bin_PROGRAMS=digris-edi2edi digris-edimcast2edi digris-zmq-converter
 noinst_LIBRARIES = libedi2edi.a
 
 INCLUDE=-Ilib -Isrc
 
-odr_edi2edi_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
-odr_edi2edi_CXXFLAGS =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
-odr_edi2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
-odr_edi2edi_SOURCES  = src/main.h src/main.cpp
+digris_edi2edi_CFLAGS   = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
+digris_edi2edi_CXXFLAGS = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
+digris_edi2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
+digris_edi2edi_SOURCES  = src/edi2edi.h src/edi2edi.cpp
 
-odr_edimcast2edi_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
-odr_edimcast2edi_CXXFLAGS =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
-odr_edimcast2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
-odr_edimcast2edi_SOURCES  = src/edimcast2edi.cpp \
+digris_edimcast2edi_CFLAGS   = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
+digris_edimcast2edi_CXXFLAGS = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
+digris_edimcast2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
+digris_edimcast2edi_SOURCES  = src/edimcast2edi.cpp \
 							src/mpe_deframer.hpp src/mpe_deframer.cpp \
 							src/EDIReceiver.hpp src/EDIReceiver.cpp
 
-odr_zmq2edi_CFLAGS   = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
-odr_zmq2edi_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_LIBS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
-odr_zmq2edi_LDADD    = libedi2edi.a $(ZMQ_LIBS) $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
-odr_zmq2edi_SOURCES  = src/zmq2edi/zmq2edi.cpp \
-					   src/zmq2edi/Sender.h \
-					   src/zmq2edi/Sender.cpp \
-					   src/zmq2edi/metadata.h \
-					   src/zmq2edi/metadata.cpp \
-					   src/zmq2edi/dabOutputZMQ.h
+digris_zmq_converter_CFLAGS   = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
+digris_zmq_converter_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_LIBS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
+digris_zmq_converter_LDADD    = libedi2edi.a $(ZMQ_LIBS) $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
+digris_zmq_converter_SOURCES  = src/zmq/main.cpp \
+					   src/zmq/Sender.h \
+					   src/zmq/Sender.cpp \
+					   src/zmq/metadata.h \
+					   src/zmq/metadata.cpp \
+					   src/zmq/dabOutputZMQ.h
 
-libedi2edi_a_CFLAGS   =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
-libedi2edi_a_CXXFLAGS =-Wall $(INCLUDE) $(GITVERSION_FLAGS)
+libedi2edi_a_CFLAGS   = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
+libedi2edi_a_CXXFLAGS = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
 libedi2edi_a_SOURCES  = src/receiver.h src/receiver.cpp \
 					   src/EDISender.h src/EDISender.cpp \
 					   lib/crc.h lib/crc.c \
@@ -67,6 +67,5 @@ libedi2edi_a_SOURCES  = src/receiver.h src/receiver.cpp \
 					   lib/fec/rs-common.h
 
 EXTRA_DIST	= COPYING NEWS README.md ChangeLog \
-			  lib/fec/README.md src/fec/LICENSE \
-			  src/charset/README
+			  lib/fec/README.md src/fec/LICENSE
 

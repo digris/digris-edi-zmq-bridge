@@ -1,17 +1,21 @@
-Overview
-========
+digris distribution bridges
+===========================
 
-ODR-EDI2EDI is part of the ODR-mmbTools tool set. More information about the
-ODR-mmbTools is available in the *guide*, available on the
-[Opendigitalradio mmbTools page](http://www.opendigitalradio.org/mmbtools).
+Developed for Opendigitalradio by digris: https://www.digris.ch
 
-About ODR-EDI2EDI
-=================
+This repository contains three tools:
+
+* digris-edi2edi
+* digris-edimcast2edi
+* digris-zmq-converter
+
+DIGRIS-EDI2EDI
+==============
 
 Sometimes you want to carry a DAB Ensemble using EDI over the Internet to a device that doesn't support EDI/TCP.
 Carrying EDI/UDP over the Internet will not work because of burst packet loss.
 
-With ODR-EDI2EDI, you can convert EDI/TCP to EDI/UDP on a small PC that is close to your device. It also allows you
+With DIGRIS-EDI2EDI, you can convert EDI/TCP to EDI/UDP on a small PC that is close to your device. It also allows you
 buffer the EDI and release it at a controlled point in time depending on the in-band timestamp.
 
 Statistics are made available through a UNIX DGRAM Socket, which also serves as remote control interface.
@@ -22,7 +26,7 @@ This tool can be considered to be the successor of ODR-ZMQ2EDI which is distribu
 [ODR-DabMux](https://github.com/Opendigitalradio/ODR-DabMux).
 
 Remote Control
-==============
+--------------
 
 ODR-EDI2EDI contains a remote-control function that allows changing settings at runtime.
 Please see `./edi2edi_remote.py` for an example on how to use it.
@@ -61,22 +65,33 @@ Outputs:
    increasing `num_dropped` value does not mean that output frames were actually missing.
  * `late_score`: (not a counter) Score between 0 and 100 indicating how often frames are late.
 
+DIGRIS-EDIMCAST2EDI
+===================
+
+This tool can receive unicast and multicast EDI/UDP, and present that to multiple listeneners over TCP.
+
+DIGRIS-ZMQ-CONVERTER
+====================
+
+This tool can act as *zmq2edi* and *zmq2zmq*, reading a ZMQ ETI stream from
+ODR-DabMux and generate an EDI or ZMQ stream.
+
 
 Installation
 ============
 
-Requirements: A C++11 compiler, autotools (debian packets `build-essential automake libtool`)
+Requirements: A C++17 compiler, autotools (debian packets `build-essential automake libtool`)
 
     ./bootstrap.sh
     ./configure
     make
     sudo make install
 
+
 Licence
 =======
 
 See the files `LICENCE` and `COPYING`
-
 
 Contributions and Contact
 =========================

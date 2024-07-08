@@ -36,11 +36,10 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include "Log.h"
-#include "main.h"
 #include "edioutput/Transport.h"
 #include "EDIReceiver.hpp"
 #include "mpe_deframer.hpp"
-
+#include "common.h"
 
 using namespace std;
 
@@ -62,7 +61,7 @@ void signal_handler(int signum)
 static void usage()
 {
     cerr << "\nUsage:\n";
-    cerr << "odr-edimcast2edi [options]\n\n";
+    cerr << "digris-edimcast2edi [options]\n\n";
     cerr << "Receive EDI over multicast, remove PFT layer and make AF layer available as TCP server\n\n";
 
     cerr << " -v             Increase verbosity (Can be given more than once).\n";
@@ -99,13 +98,13 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    cerr << "ODR-EDIMCAST2EDI " <<
+    cerr << "DIGRIS-EDIMCAST2EDI " <<
 #if defined(GITVERSION)
         GITVERSION <<
 #else
         PACKAGE_VERSION <<
 #endif
-        " starting up" << endl;
+        " starting up\n" << BANNER_MESSAGE;
 
     if (argc == 1) {
         usage();

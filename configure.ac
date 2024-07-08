@@ -1,11 +1,11 @@
 # Copyright (C) 2022 Matthias P. Braendli, http://opendigitalradio.org
 AC_PREREQ([2.69])
-AC_INIT([ODR-EDI2EDI],[0.5.0],[matthias.braendli@mpb.li])
+AC_INIT([DIGRIS-EDI-ZMQ-BRIDGE],[0.6.0],[matthias.braendli@mpb.li])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE([-Wall foreign subdir-objects])
-AC_CONFIG_SRCDIR([src/main.cpp])
+AC_CONFIG_SRCDIR([src/edi2edi.cpp])
 AC_CONFIG_HEADERS([config.h])
 AM_SILENT_RULES([yes])
 
