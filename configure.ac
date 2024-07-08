@@ -22,6 +22,8 @@ AX_CXX_COMPILE_STDCXX(17,noext,mandatory)
 # Checks for libraries.
 AX_PTHREAD([], AC_MSG_ERROR([requires pthread]))
 
+AX_ZMQ([4.0.0], [], AC_MSG_ERROR(ZeroMQ 4.0.0 is required))
+
 # Checks for header files.
 AC_PROG_EGREP
 
