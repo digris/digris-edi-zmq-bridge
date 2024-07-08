@@ -192,8 +192,10 @@ int main(int argc, char **argv)
 
         rx.add_receive_port(rx_port, rx_bindto, rx_mcastaddr);
 
+        vector<Socket::UDPReceiver::ReceivedPacket> rx_packets;
         while (running) {
-            vector<Socket::UDPReceiver::ReceivedPacket> rx_packets;
+            rx_packets.clear();
+
             try {
                 rx_packets = rx.receive(100);
             }
