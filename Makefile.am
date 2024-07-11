@@ -11,9 +11,9 @@ noinst_LIBRARIES = libedi2edi.a
 
 INCLUDE=-Ilib -Isrc
 
-digris_edi2edi_CFLAGS   = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
-digris_edi2edi_CXXFLAGS = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
-digris_edi2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
+digris_edi2edi_CFLAGS   = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
+digris_edi2edi_CXXFLAGS = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
+digris_edi2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS) $(ZMQ_LIBS)
 digris_edi2edi_SOURCES  = src/edi2edi.h src/edi2edi.cpp
 
 digris_edimcast2edi_CFLAGS   = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
@@ -23,20 +23,20 @@ digris_edimcast2edi_SOURCES  = src/edimcast2edi.cpp \
 							src/mpe_deframer.hpp src/mpe_deframer.cpp \
 							src/EDIReceiver.hpp src/EDIReceiver.cpp
 
-digris_zmq_converter_CFLAGS   = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
-digris_zmq_converter_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_LIBS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
-digris_zmq_converter_LDADD    = libedi2edi.a $(ZMQ_LIBS) $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
+digris_zmq_converter_CFLAGS   = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
+digris_zmq_converter_CXXFLAGS = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
+digris_zmq_converter_LDADD    = libedi2edi.a $(ZMQ_LIBS)
 digris_zmq_converter_SOURCES  = src/zmq/main.cpp \
 					   src/zmq/Sender.h \
-					   src/zmq/Sender.cpp \
-					   src/zmq/metadata.h \
-					   src/zmq/metadata.cpp \
-					   src/zmq/dabOutputZMQ.h
+					   src/zmq/Sender.cpp
 
 libedi2edi_a_CFLAGS   = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
 libedi2edi_a_CXXFLAGS = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
 libedi2edi_a_SOURCES  = src/receiver.h src/receiver.cpp \
 					   src/EDISender.h src/EDISender.cpp \
+					   src/zmq/edi2zmq.hpp src/zmq/edi2zmq.cpp \
+					   src/zmq/metadata.h src/zmq/metadata.cpp \
+					   src/zmq/dabOutputZMQ.h src/zmq/dabOutputZMQ.cpp \
 					   lib/crc.h lib/crc.c \
 					   lib/Globals.cpp \
 					   lib/Log.h lib/Log.cpp \

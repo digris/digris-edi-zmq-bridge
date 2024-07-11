@@ -64,9 +64,22 @@ struct source_t {
     uint64_t num_connects = 0;
 };
 
+struct eti_frame_t {
+    std::vector<uint8_t> frame;
+    uint16_t mnsc;
+    EdiDecoder::frame_timestamp_t timestamp;
+    EdiDecoder::eti_fc_data frame_characterisation;
+};
+
 class Receiver : public EdiDecoder::ETIDataCollector {
     public:
-        Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket, int verbosity);
+        Receiver(
+                source_t& source,
+                std::function<void(tagpacket_t&&, Receiver*)> push_tagpacket,
+                std::function<void(eti_frame_t&&)> eti_frame_callback,
+                bool reconstruct_eti,
+                int verbosity
+                );
         Receiver(const Receiver&) = delete;
         Receiver operator=(const Receiver&) = delete;
         Receiver(Receiver&&) = default;
@@ -77,19 +90,18 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         virtual void update_protocol(
                 const std::string& proto,
                 uint16_t major,
-                uint16_t minor) override { }
+                uint16_t minor) override;
 
         // Update the data for the frame characterisation
         virtual void update_fc_data(const EdiDecoder::eti_fc_data& fc_data) override;
 
-        // Ignore most events because we are interested in retransmitting EDI, not
-        // decoding it
-        virtual void update_fic(std::vector<uint8_t>&& fic) override { }
-        virtual void update_err(uint8_t err) override { }
-        virtual void update_edi_time(uint32_t utco, uint32_t seconds) override { }
-        virtual void update_mnsc(uint16_t mnsc) override { }
-        virtual void update_rfu(uint16_t rfu) override { }
-        virtual void add_subchannel(EdiDecoder::eti_stc_data&& stc) override { }
+        // Collect data for ZMQ frame reconstruction
+        virtual void update_fic(std::vector<uint8_t>&& fic) override;
+        virtual void update_err(uint8_t err) override;
+        virtual void update_edi_time(uint32_t utco, uint32_t seconds) override;
+        virtual void update_mnsc(uint16_t mnsc) override;
+        virtual void update_rfu(uint16_t rfu) override;
+        virtual void add_subchannel(EdiDecoder::eti_stc_data&& stc) override;
 
         // Tell the ETIWriter that the AFPacket is complete
         virtual void assemble(EdiDecoder::ReceivedTagPacket&& tag_data) override;
@@ -145,8 +157,24 @@ class Receiver : public EdiDecoder::ETIDataCollector {
 
     private:
         std::function<void(tagpacket_t&& tagpacket, Receiver*)> m_push_tagpacket_callback;
+        std::function<void(eti_frame_t&&)> m_eti_frame_callback;
+        bool m_reconstruct_eti = false;
         std::shared_ptr<EdiDecoder::ETIDecoder> m_edi_decoder;
-        uint16_t m_dlfc = 0;
+
+        bool m_fc_valid = false;
+        EdiDecoder::eti_fc_data m_fc;
+        bool m_proto_valid = false;
+        uint8_t m_err = 0x00;
+        // m_fic is valid if non-empty
+        std::vector<uint8_t> m_fic;
+        std::list<EdiDecoder::eti_stc_data> m_subchannels;
+        bool m_time_valid = false;
+        uint32_t m_utco = 0;
+        uint32_t m_seconds = 0;
+        uint16_t m_mnsc = 0xffff;
+        // 16 bits: RFU field in EOH
+        uint16_t m_rfu = 0xffff;
+
         int m_verbosity;
 
         connection_error_t m_most_recent_connect_error;

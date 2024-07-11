@@ -37,35 +37,6 @@
 #include "zmq/zmq.hpp"
 #include "zmq/metadata.h"
 
-// Abstract base class for all outputs
-class DabOutput
-{
-    public:
-        virtual int Open(const char* name) = 0;
-        int Open(std::string name)
-        {
-            return Open(name.c_str());
-        }
-
-        // Return -1 on failure
-        virtual int Write(void* buffer, int size) = 0;
-        virtual int Close() = 0;
-
-        virtual ~DabOutput() {}
-
-        virtual std::string get_info() const = 0;
-
-        virtual void setMetadata(std::shared_ptr<OutputMetadata> &md) = 0;
-};
-
-// ----- used in File and Fifo outputs
-enum EtiFileType {
-    ETI_FILE_TYPE_NONE = 0,
-    ETI_FILE_TYPE_RAW,
-    ETI_FILE_TYPE_STREAMED,
-    ETI_FILE_TYPE_FRAMED
-};
-
 #define NUM_FRAMES_PER_ZMQ_MESSAGE 4
 /* A concatenation of four ETI frames,
  * whose maximal size is 6144.
@@ -108,23 +79,21 @@ struct zmq_dab_message_t
 #define ZMQ_DAB_MESSAGE_HEAD_LENGTH (4 + NUM_FRAMES_PER_ZMQ_MESSAGE*2)
 
 // -------------- ZeroMQ message queue ------------------
-class DabOutputZMQ : public DabOutput
+class DabOutputZMQ
 {
     public:
         DabOutputZMQ(const std::string &zmq_proto, bool allow_metadata) :
             endpoint_(""),
             zmq_proto_(zmq_proto), zmq_context_(1),
             zmq_pub_sock_(zmq_context_, ZMQ_PUB),
-            zmq_message_ix(0),
             m_allow_metadata(allow_metadata)
         { }
 
         DabOutputZMQ(const DabOutputZMQ& other) = delete;
         DabOutputZMQ& operator=(const DabOutputZMQ& other) = delete;
-
-        virtual ~DabOutputZMQ()
+        ~DabOutputZMQ()
         {
-            zmq_pub_sock_.close();
+            Close();
         }
 
         std::string get_info(void) const {
@@ -133,7 +102,7 @@ class DabOutputZMQ : public DabOutput
 
         int Open(const char* endpoint);
         int Write(void* buffer, int size);
-        int Close();
+        void Close();
         void setMetadata(std::shared_ptr<OutputMetadata> &md);
 
     private:
@@ -143,9 +112,8 @@ class DabOutputZMQ : public DabOutput
         zmq::socket_t zmq_pub_sock_; // handle for the zmq publisher socket
 
         zmq_dab_message_t zmq_message;
-        int zmq_message_ix;
+        int zmq_message_ix = 0;
 
         bool m_allow_metadata;
         std::vector<std::shared_ptr<OutputMetadata> > meta_;
 };
-

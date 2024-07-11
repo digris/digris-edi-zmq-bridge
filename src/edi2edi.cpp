@@ -92,6 +92,9 @@ static void usage()
     cerr << " -S <source ip>            Select the source IP in case we want to use multicast.\n";
     cerr << " -t <ttl>                  Set the packet's TTL.\n\n";
 
+    cerr << "\nZMQ Output options\n";
+    cerr << " -z <intf:port>            Set the ZMQ endpoint, e.g. *:8001 to listen on all interfaces.\n";
+
     cerr << "Debugging utilities\n";
     cerr << " --live-stats-port <port>  Send live statistics to UDP 127.0.0.1:PORT. Receive with nc -uklp PORT\n\n";
     cerr << " --disable-pft             Disable PFT and send AFPackets. (Use only when sending to localhost)\n";
@@ -134,7 +137,7 @@ int Main::start(int argc, char **argv)
     int ch = 0;
     int index = 0;
     while (ch != -1) {
-        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:f:i:Dvb:w:x:h", longopts, &index);
+        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:f:i:Dvb:w:x:z:h", longopts, &index);
         switch (ch) {
             case -1:
                 break;
@@ -172,11 +175,16 @@ int Main::start(int argc, char **argv)
                         return 1;
                     }
 
+                    try {
                     const bool enabled = ch == 'c';
                     sources.push_back({
                             optarg_s.substr(0, pos_colon),
                             stoi(optarg_s.substr(pos_colon+1)),
                             enabled});
+                    }
+                    catch (logic_error& e) {
+                        throw runtime_error(string{"The -c or -F option "} + optarg_s + " is not valid");
+                    }
                 }
                 break;
             case 'C':
@@ -219,6 +227,9 @@ int Main::start(int argc, char **argv)
             case 'w':
                 edisendersettings.delay_ms = stoi(optarg);
                 break;
+            case 'z':
+                eti_zmq_sender.open(optarg);
+                break;
             case 'h':
             default:
                 usage();
@@ -247,7 +258,9 @@ int Main::start(int argc, char **argv)
         }
     }
 
-    add_edi_destination();
+    if (edi_destination) {
+        add_edi_destination();
+    }
 
     if (sources.empty()) {
         etiLog.level(error) << "No sources given";
@@ -259,8 +272,10 @@ int Main::start(int argc, char **argv)
         etiLog.level(warn) << "Starting up with zero enabled sources. Did you forget to add a -c option?";
     }
 
-    if (edi_conf.destinations.empty()) {
-        etiLog.level(error) << "No EDI destinations set";
+    const bool zmq_output_enabled = eti_zmq_sender.is_open();
+
+    if (edi_conf.destinations.empty() and not zmq_output_enabled) {
+        etiLog.level(error) << "No destinations set";
         return 1;
     }
 
@@ -279,8 +294,14 @@ int Main::start(int argc, char **argv)
 
     receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
     for (auto& source : sources) {
-        auto callback = [&](tagpacket_t&& tp, Receiver* r) { edisender.push_tagpacket(move(tp), r); };
-        receivers.emplace_back(source, callback, verbosity);
+        auto tagpacket_callback = [&](tagpacket_t&& tp, Receiver* r) {
+            edisender.push_tagpacket(std::move(tp), r);
+        };
+
+        auto eti_callback = [&](eti_frame_t&& f) {
+            eti_zmq_sender.encode_zmq_frame(std::move(f));
+        };
+        receivers.emplace_back(source, tagpacket_callback, eti_callback, zmq_output_enabled, verbosity);
     }
 
 
@@ -298,6 +319,13 @@ int Main::start(int argc, char **argv)
 
     edisender.start(edi_conf, edisendersettings);
     edisender.print_configuration();
+
+    if (eti_zmq_sender.is_open()) {
+        etiLog.level(info) << "ZMQ output: " << eti_zmq_sender.endpoint();
+    }
+    else {
+        etiLog.level(info) << "ZMQ output: disabled";
+    }
 
     if (mode == Mode::Switching) {
         ensure_one_active();

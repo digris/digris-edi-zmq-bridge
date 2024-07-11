@@ -26,20 +26,18 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
-#include <thread>
 #include <vector>
-#include <unordered_map>
 #include <cmath>
 #include <cstring>
 #include <fcntl.h>
 #include <getopt.h>
 #include <poll.h>
-#include <signal.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include "Log.h"
 #include "receiver.h"
+#include "crc.h"
 
 using namespace std;
 
@@ -50,9 +48,15 @@ static constexpr int KA_PROBES = 3; // Number of keepalives before connection co
 
 static constexpr auto RECONNECT_DELAY = chrono::milliseconds(480);
 
-Receiver::Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket, Receiver*)> push_tagpacket, int verbosity) :
+Receiver::Receiver(source_t& source,
+        std::function<void(tagpacket_t&&, Receiver*)> push_tagpacket,
+        std::function<void(eti_frame_t&&)> eti_frame_callback,
+        bool reconstruct_eti,
+        int verbosity) :
     source(source),
     m_push_tagpacket_callback(push_tagpacket),
+    m_eti_frame_callback(eti_frame_callback),
+    m_reconstruct_eti(reconstruct_eti),
     m_verbosity(verbosity)
 {
     if (source.active) {
@@ -68,18 +72,265 @@ Receiver::Receiver(source_t& source, std::function<void(tagpacket_t&& tagpacket,
     }
 }
 
+void Receiver::update_protocol(
+        const std::string& proto,
+        uint16_t major,
+        uint16_t minor)
+{
+    m_proto_valid = (proto == "DETI" and major == 0 and minor == 0);
+
+    if (not m_proto_valid) {
+        throw std::invalid_argument("Wrong EDI protocol");
+    }
+}
+
+void Receiver::update_err(uint8_t err)
+{
+    if (not m_proto_valid) {
+        throw std::logic_error("Cannot update ERR before protocol");
+    }
+    m_err = err;
+}
+
 void Receiver::update_fc_data(const EdiDecoder::eti_fc_data& fc_data)
 {
-    m_dlfc = fc_data.dlfc;
+    if (not m_proto_valid) {
+        throw std::logic_error("Cannot update FC before protocol");
+    }
+
+    m_fc_valid = false;
+    m_fc = fc_data;
+
+    if (not m_fc.ficf) {
+        throw std::invalid_argument("FIC must be present");
+    }
+
+    if (m_fc.mid > 4) {
+        throw std::invalid_argument("Invalid MID");
+    }
+
+    if (m_fc.fp > 7) {
+        throw std::invalid_argument("Invalid FP");
+    }
+
+    m_fc_valid = true;
+}
+
+void Receiver::update_fic(std::vector<uint8_t>&& fic)
+{
+    if (not m_proto_valid) {
+        throw std::logic_error("Cannot update FIC before protocol");
+    }
+
+    m_fic = std::move(fic);
+}
+
+void Receiver::update_edi_time(
+        uint32_t utco,
+        uint32_t seconds)
+{
+    if (not m_proto_valid) {
+        throw std::logic_error("Cannot update time before protocol");
+    }
+
+    m_utco = utco;
+    m_seconds = seconds;
+
+    // TODO check validity
+    m_time_valid = true;
+}
+
+void Receiver::update_mnsc(uint16_t mnsc)
+{
+    if (not m_proto_valid) {
+        throw std::logic_error("Cannot update MNSC before protocol");
+    }
+
+    m_mnsc = mnsc;
+}
+
+void Receiver::update_rfu(uint16_t rfu)
+{
+    if (not m_proto_valid) {
+        throw std::logic_error("Cannot update RFU before protocol");
+    }
+
+    m_rfu = rfu;
+}
+
+void Receiver::add_subchannel(EdiDecoder::eti_stc_data&& stc)
+{
+    if (not m_proto_valid) {
+        throw std::logic_error("Cannot add subchannel before protocol");
+    }
+
+    m_subchannels.emplace_back(std::move(stc));
+
+    if (m_subchannels.size() > 64) {
+        throw std::invalid_argument("Too many subchannels");
+    }
+
 }
 
 void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data)
 {
+    if (not m_proto_valid) {
+        throw std::logic_error("Cannot assemble ETI before protocol");
+    }
+
+    if (not m_fc_valid) {
+        throw std::logic_error("Cannot assemble ETI without FC");
+    }
+
+    if (m_fic.empty()) {
+        throw std::logic_error("Cannot assemble ETI without FIC data");
+    }
+
+    // ETS 300 799 Clause 5.3.2, but we don't support not having
+    // a FIC
+    if (    (m_fc.mid == 3 and m_fic.size() != 32 * 4) or
+            (m_fc.mid != 3 and m_fic.size() != 24 * 4) ) {
+        stringstream ss;
+        ss << "Invalid FIC length " << m_fic.size() <<
+            " for MID " << m_fc.mid;
+        throw std::invalid_argument(ss.str());
+    }
+
+    if (m_reconstruct_eti) {
+        std::vector<uint8_t> eti;
+        eti.reserve(6144);
+
+        eti.push_back(m_err);
+
+        // FSYNC
+        if (m_fc.fct() % 2 == 1) {
+            eti.push_back(0xf8);
+            eti.push_back(0xc5);
+            eti.push_back(0x49);
+        }
+        else {
+            eti.push_back(0x07);
+            eti.push_back(0x3a);
+            eti.push_back(0xb6);
+        }
+
+        // LIDATA
+        // FC
+        eti.push_back(m_fc.fct());
+
+        const uint8_t NST = m_subchannels.size();
+
+        if (NST == 0) {
+            etiLog.level(info) << "Zero subchannels in EDI stream";
+        }
+
+        eti.push_back((m_fc.ficf << 7) | NST);
+
+        // We need to pack:
+        //  FP 3 bits
+        //  MID 2 bits
+        //  FL 11 bits
+
+        // FL: EN 300 799 5.3.6
+        uint16_t FL = NST + 1 + m_fic.size();
+        for (const auto& subch : m_subchannels) {
+            FL += subch.mst.size();
+        }
+
+        const uint16_t fp_mid_fl = (m_fc.fp << 13) | (m_fc.mid << 11) | FL;
+
+        eti.push_back(fp_mid_fl >> 8);
+        eti.push_back(fp_mid_fl & 0xFF);
+
+        // STC
+        for (const auto& subch : m_subchannels) {
+            eti.push_back( (subch.scid << 2) | (subch.sad & 0x300) );
+            eti.push_back( subch.sad & 0xff );
+            eti.push_back( (subch.tpl << 2) | ((subch.stl() & 0x300) >> 8) );
+            eti.push_back( subch.stl() & 0xff );
+        }
+
+        // EOH
+        // MNSC
+        eti.push_back(m_mnsc >> 8);
+        eti.push_back(m_mnsc & 0xFF);
+
+        // CRC
+        // Calculate CRC from eti[4] to current position
+        uint16_t eti_crc = 0xFFFF;
+        eti_crc = crc16(eti_crc, &eti[4], eti.size() - 4);
+        eti_crc ^= 0xffff;
+        eti.push_back(eti_crc >> 8);
+        eti.push_back(eti_crc & 0xFF);
+
+        const size_t mst_start = eti.size();
+        // MST
+        // FIC data
+        copy(m_fic.begin(), m_fic.end(), back_inserter(eti));
+
+        // Data stream
+        for (const auto& subch : m_subchannels) {
+            copy(subch.mst.begin(), subch.mst.end(), back_inserter(eti));
+        }
+
+        // EOF
+        // CRC
+        uint16_t mst_crc = 0xFFFF;
+        mst_crc = crc16(mst_crc, &eti[mst_start], eti.size() - mst_start);
+        mst_crc ^= 0xffff;
+        eti.push_back(mst_crc >> 8);
+        eti.push_back(mst_crc & 0xFF);
+
+        // RFU
+        eti.push_back(m_rfu >> 8);
+        eti.push_back(m_rfu);
+
+        // TIST
+        eti.push_back(m_fc.tsta >> 24);
+        eti.push_back((m_fc.tsta >> 16) & 0xFF);
+        eti.push_back((m_fc.tsta >> 8) & 0xFF);
+        eti.push_back(m_fc.tsta & 0xFF);
+
+        if (eti.size() > 6144) {
+            std::stringstream ss;
+            ss << "ETI length error: " <<
+                "FIC[" << m_fic.size() << "] Subch ";
+
+            for (const auto& subch : m_subchannels) {
+                ss << (int)subch.stream_index << "[" << subch.mst.size() << "] ";
+            }
+
+            etiLog.level(debug) << ss.str();
+            throw std::logic_error("ETI frame cannot be longer than 6144: " +
+                    std::to_string(eti.size()));
+        }
+
+        // Do not resize to 6144, because output is ZMQ, which doesn't need
+        // full length frames.
+        //eti.resize(6144, 0x55);
+
+        eti_frame_t etiFrame;
+        etiFrame.frame = std::move(eti);
+        etiFrame.timestamp.seconds = m_seconds;
+        etiFrame.timestamp.utco = m_utco;
+        etiFrame.timestamp.tsta = m_fc.tsta;
+        etiFrame.mnsc = m_mnsc;
+        etiFrame.frame_characterisation = std::move(m_fc);
+
+        m_eti_frame_callback(std::move(etiFrame));
+    }
+
+    m_mnsc = 0xFFFF;
+    m_proto_valid = false;
+    m_fc_valid = false;
+    m_fic.clear();
+    m_subchannels.clear();
+
     using namespace chrono;
     tagpacket_t tp;
     tp.hostnames = source.hostname;
     tp.seq = tag_data.seq;
-    tp.dlfc = m_dlfc;
+    tp.dlfc = m_fc.dlfc;
     tp.afpacket = std::move(tag_data.afpacket);
     tp.received_at = steady_clock::now();
     tp.timestamp = std::move(tag_data.timestamp);

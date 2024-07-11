@@ -34,6 +34,7 @@
 #include "edioutput/TagItems.h"
 #include "edioutput/TagPacket.h"
 #include "edioutput/Transport.h"
+#include "zmq/edi2zmq.hpp"
 
 constexpr long DEFAULT_SWITCH_DELAY = 2000;
 
@@ -66,6 +67,8 @@ class Main {
 
         EDISenderSettings edisendersettings;
         EDISender edisender;
+
+        ETI2ZMQ eti_zmq_sender;
 
         int verbosity = 0;
 
