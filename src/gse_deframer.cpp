@@ -1,8 +1,8 @@
 /*
-    This tool allows to extract bbframes which are encapsulated within a pseudo
-    transport stream.
+    This file contains parts from both pts2bbf and bbfedi2eti
 
-    Take from https://github.com/newspaperman/bbframe-tools
+    pts2bbf allows to extract bbframes which are encapsulated within a pseudo
+    transport stream. Taken from https://github.com/newspaperman/bbframe-tools
 
     **pts2bbf** will decapsulate on TS PID 0x010e (decimal 270) according to the
     description from Digital Devices
@@ -10,10 +10,11 @@
 
     Licence: GPLv3
 
+
     It also contains code from bbfed2eti
     LICENCE: Mozilla Public License, version 2.0
 
-    Adapted to odr-edi2edi by mpb in june 2024
+    Adapted to odr-edi2edi by mpb in summer 2024
  */
 
 #include <cstddef>
@@ -22,7 +23,6 @@
 #include <cstdlib>
 #include <ctime>
 #include <cstring>
-#include <stdexcept>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -32,6 +32,7 @@
 #include <vector>
 
 #include "gse_deframer.hpp"
+#include "lib/crc.h"
 
 using namespace std;
 
@@ -43,12 +44,9 @@ GSEDeframer::GSEDeframer(const char* optarg)
     has_mis = true;
     mis = strtol(optarg, nullptr, 10);
 
-    fragmentor = new unsigned char*[256];
-    for (int i=0; i<256;i++) {
-        fragmentor[i]=0;
-    }
-
     m_debug = getenv("DEBUG") ? 1 : 0;
+
+    init_crc32tab(0x04c11db7UL, 0); // ETSI TS 102 606-1 Clause 4.2.2, remove the x^32 factor
 }
 
 void GSEDeframer::process_packet(const std::vector<uint8_t>& udp_packet)
@@ -80,6 +78,42 @@ void GSEDeframer::process_packet(const std::vector<uint8_t>& udp_packet)
     }
 }
 
+/*  process_ts is from pts2bbf.
+
+    https://github.com/DigitalDevices/dddvb/blob/master/docs/bbframes
+
+    Packet format:
+
+    The BBFrames are packetized into MPEG2 private sections (0x80), one section per transport stream
+    packet. The PID is fixed at 0x010E.
+
+
+    Header packet of frame:
+
+    0x47 0x41 0x0E 0x1X 0x00 0x80 0x00 L 0xB8 BBHeader (169 * Data)
+
+    L: Section Length, always 180 (0xB4)
+    BBHeader: 10 Bytes BBFrame header (see DVB-S2, EN-302307)
+    Data: 169 Bytes of BBFrame payload
+
+
+    Payload packets:
+
+    0x47 0x41 0x0E 0x1X 0x00 0x80 0x00 L N (179 * Data)
+
+    L: Section Length, always 180 (0xB4)
+    N: Packet counter, starting with 0x01 after header packet
+    Data: 179 Bytes of BBFrame payload
+
+
+    Last packet:
+    0x47 0x41 0x0E 0x1X 0x00 0x80 0x00 L N ((L-1) * Data)  ((180 – L) * 0xFF)
+
+    L: Section Length, remaining Data – 1, (0x01 .. 0xB4)
+    N: Packet counter
+    Data: L-1 Bytes of BBFrame payload
+*/
+
 void GSEDeframer::process_ts(const uint8_t *ts) {
     uint16_t pid = ts[1];
     pid &= 0x01F;
@@ -90,8 +124,15 @@ void GSEDeframer::process_ts(const uint8_t *ts) {
         const uint8_t *buf = nullptr;
         size_t buflen = 0;
 
-#if 1
-        if ((ts[8] & 0xff) == 0xb8) { //START INDICATOR
+#if DEBUG
+        for (int i = 0; i < 188; i++) {
+            fprintf(stderr, "%02X ", ts[i]);
+        }
+
+        if (ts[8] == 0xb8) fprintf(stderr, " BEGIN");
+#endif
+
+        if (ts[8] == 0xb8) { //START INDICATOR
             buf = ts+8;
             buflen = ts[7];
         }
@@ -99,24 +140,27 @@ void GSEDeframer::process_ts(const uint8_t *ts) {
             buf = ts+9;
             buflen = ts[7]-1;
         }
-        fprintf(stderr, "process_ts %zu\n", buflen);
-        prepare_bbframe(buf, buflen);
-#else
-        prepare_bbframe(ts+8, ts[7]);
+#if DEBUG
+        fprintf(stderr, " %d -> %zu\n", (int)ts[7], buflen);
 #endif
+        prepare_bbframe(buf, buflen);
     }
 }
 
 
 void GSEDeframer::prepare_bbframe(const uint8_t* buf, size_t len)
 {
-    const uint8_t *b = buf;
+    if (m_bbframe.empty() and buf[0] != 0xb8) {
+        //fprintf(stderr, "prepare_bbframe SKIP\n");
+        return;
+    }
+
     for (size_t i = 0; i < len; i++) {
-        m_bbframe.push_back(*b++);
+        m_bbframe.push_back(buf[i]);
     }
 
     while (m_bbframe.size() > 0 and m_bbframe[0] != 0xb8) {
-        fprintf(stderr, "prep_bbframe skip sync %zu\n", m_bbframe.size());
+        //fprintf(stderr, "prep_bbframe skip sync %02x %zu\n", m_bbframe[0], m_bbframe.size());
         m_bbframe.pop_front();
     }
 
@@ -125,182 +169,196 @@ void GSEDeframer::prepare_bbframe(const uint8_t* buf, size_t len)
         return;
     }
 
-    uint8_t dfl1 = m_bbframe[1+5];
-    uint8_t dfl2 = m_bbframe[1+6];
-    size_t bblength = (((uint16_t)dfl1) << 8 | dfl2) >> 3;
+    //uint8_t maType1 = m_bbframe[1+0];
+    uint8_t maType2 = m_bbframe[1+1];
+    //uint8_t upl1 = m_bbframe[1+2];
+    //uint8_t upl2 = m_bbframe[1+3];
+    //size_t upl = ((upl1 << 8) | upl2) / 8;
+    uint16_t dfl1 = m_bbframe[1+4];
+    uint16_t dfl2 = m_bbframe[1+5];
+    size_t bblength = ((dfl1 << 8) | dfl2) / 8;
+    //fprintf(stderr, "prep_bbframe maType1=%d maType2=%d bblen=%zu %zu\n", maType1, maType2, bblength, m_bbframe.size());
 
     if (m_bbframe.size() < 1 + 10 + bblength) {
+        //fprintf(stderr, "prep_bbframe TOO SHORT DFL=%zu UPL=%ld\n", bblength, upl);
         return;
     }
-
-    uint8_t maType1 = m_bbframe[1+0];
-    uint8_t maType2 = m_bbframe[1+1];
-
-    fprintf(stderr, "prep_bbframe %d %d %zu %zu\n", maType1, maType2, bblength, m_bbframe.size());
 
     if (has_mis and maType2 != mis) {
         for (size_t i = 0; i < 1 + 10 + bblength; i++) {
             m_bbframe.pop_front();
         }
+#if DEBUG
+        fprintf(stderr, "prep_bbframe mis=%d != %d HEAD:", maType2, mis);
+        for (int i = 0; i < 10 and i < m_bbframe.size(); i++) {
+            fprintf(stderr, "%02X ", m_bbframe.at(i));
+        }
+        fprintf(stderr, "\n");
+#endif
         return;
     }
 
+    //fprintf(stderr, "prep_bbframe ENOUGH bblen=%zu %zu\n", bblength, m_bbframe.size());
+
     size_t pos = 0;
     while (pos < bblength - 4) { //last 4 bytes contain crc32
-        const size_t gseLength = ((uint16_t)m_bbframe[1+10+pos]) << 8 | m_bbframe[1+10+pos+1];
-
-        fprintf(stderr, "prep_bbframe gselen=%zu at pos=%zu\n", gseLength, pos);
-
-        if ((m_bbframe[1+10+pos] & 0xf0) == 0) {
-            fprintf(stderr, "prep_bbframe 0xf0 at pos=%zu\n", pos);
+        if ((m_bbframe[1+10+pos] & 0xf0) == 0) { // start=0, end=0, LT=0. See TS 102 606-1 Table 2
+            fprintf(stderr, "prep_bbframe only padding at pos=%zu\n", pos);
             break;
         }
+
+        const uint16_t gseLength1 = m_bbframe[1+10+pos] & 0x0F;
+        const uint16_t gseLength2 = m_bbframe[1+10+pos+1];
+        const size_t gseLength = (gseLength1 << 8) | gseLength2;
+
+        //fprintf(stderr, "prep_bbframe gselen=%zu at pos=%zu\n", gseLength, pos);
 
         if (gseLength + 2 > bblength-pos) {
             fprintf(stderr, "prep_bbframe short buf at pos=%zu\n", pos);
             break;
         }
 
-        std::vector<uint8_t> gse(gseLength);
+        std::vector<uint8_t> gse(gseLength + 2);
         std::copy(m_bbframe.begin() + 1 + 10 + pos,
-                m_bbframe.begin() + 1 + 10 + pos + gseLength,
+                m_bbframe.begin() + 1 + 10 + pos + gse.size(),
                 gse.begin());
 
         if (!process_bbframe(gse.data(), gse.size())) break;
         pos += gseLength + 2;
     }
 
-    fprintf(stderr, "prep_bbframe discard %zu\n", bblength);
+    //fprintf(stderr, "prep_bbframe discard %zu\n", 1 + 10 + bblength);
     for (size_t i = 0; i < 1 + 10 + bblength; i++) {
         m_bbframe.pop_front();
     }
-}
-
-
-static bool isSelected(const uint8_t* buf)
-{
-#if 0
-    if(has_src_ip && (!(buf[0]==src_ip[0] && buf[1]==src_ip[1] && buf[2]==src_ip[2] && buf[3]==src_ip[3])))
-        return false;
-    if(has_dst_ip && (!(buf[4]==dst_ip[0] && buf[5]==dst_ip[1] && buf[6]==dst_ip[2] && buf[7]==dst_ip[3])))
-        return false;
-    if(has_src_port &&(!(buf[0x8]==src_port[0] && buf[0x9]==src_port[1])))
-        return false;
-    if(has_dst_port &&(!(buf[0xa]==dst_port[0] && buf[0xb]==dst_port[1])))
-        return false;
+#if DEBUG
+    fprintf(stderr, "prep_bbframe OUT HEAD:");
+    for (int i = 0; i < 10 and i < m_bbframe.size(); i++) {
+        fprintf(stderr, "%02X ", m_bbframe.at(i));
+    }
+    fprintf(stderr, "\n");
 #endif
+}
+
+bool GSEDeframer::process_bbframe(const uint8_t* payload, size_t payloadLen)
+{
+    // Refer to ETSI TS 102 606-1 Table 2
+    const bool start = payload[0] & 0b10000000;
+    const bool end = payload[0] & 0b01000000;
+    const uint32_t lt = (payload[0] >> 4) & 0x03;
+
+    if (not start and not end and lt == 0) {
+        // Only padding
+        return false;
+    }
+
+    const uint16_t gseLength = ((payload[0] & 0x0F) << 8) | payload[1];
+
+    //fprintf(stderr, "GSE: payload %zu, start=%d, end=%d, LT=%d, gseLength=%d\n", payloadLen, start, end, lt, gseLength);
+
+    if (start and not end) {
+        uint8_t frag_id = payload[2];
+        uint16_t total_length = (payload[3] << 8) | payload[4];
+        uint16_t protocol_type = (payload[5] << 8) | payload[6];
+        size_t offset = 7;
+        if (lt == 0x01) {
+            offset += 3;
+        }
+        else if (lt == 0x00) {
+            offset += 6;
+        }
+        std::copy(payload + offset,
+                payload + 2 + gseLength,
+                std::back_inserter(fragments[frag_id].pdu_data));
+        fragments[frag_id].total_length = total_length;
+        fragments[frag_id].protocol_type = protocol_type;
+        fragments[frag_id].crc = crc32(fragments[frag_id].crc, payload + 3, gseLength - sizeof(frag_id));
+    }
+    else if (not start and not end) {
+        uint8_t frag_id = payload[2];
+        size_t offset = 3;
+
+        if (fragments.count(frag_id) > 0) {
+            std::copy(payload + offset,
+                    payload + 2 + gseLength,
+                    std::back_inserter(fragments.at(frag_id).pdu_data));
+            fragments[frag_id].crc = crc32(fragments[frag_id].crc, payload + 3, gseLength - sizeof(frag_id));
+        }
+    }
+    else if (not start and end) {
+        uint8_t frag_id = payload[2];
+        size_t offset = 3;
+        const size_t CRCLEN = 4;
+        if (fragments.count(frag_id) > 0) {
+            std::copy(payload + offset,
+                    payload + 2 + gseLength - CRCLEN,
+                    std::back_inserter(fragments.at(frag_id).pdu_data));
+            fragments[frag_id].crc = crc32(fragments[frag_id].crc, payload + 3, gseLength - sizeof(frag_id));
+
+#if DEBUG
+            fprintf(stderr, "COMPLETE %d: prot=%04X len=%zu CRC at end: %08X\n",
+                    (int)frag_id,
+                    fragments[frag_id].protocol_type,
+                    fragments[frag_id].pdu_data.size(),
+                    fragments[frag_id].crc);
+#endif
+
+            if (fragments[frag_id].protocol_type == 0x0800) {
+                process_ipv4_pdu(std::move(fragments[frag_id].pdu_data));
+            }
+
+            fragments.erase(frag_id);
+        }
+    }
+    else if (start and end) {
+        uint16_t protocol_type = (payload[2] << 8) | payload[3];
+        size_t offset = 4;
+        if (lt == 0x01) {
+            offset += 3;
+        }
+        else if (lt == 0x00) {
+            offset += 6;
+        }
+        std::vector<uint8_t> pdu_data;
+        std::copy(payload + offset,
+                payload + 2 + gseLength,
+                std::back_inserter(pdu_data));
+
+        //fprintf(stderr, "COMPLETE: prot=%04X len=%zu\n", protocol_type, pdu_data.size());
+        if (protocol_type == 0x0800) {
+            process_ipv4_pdu(std::move(pdu_data));
+        }
+    }
     return true;
 }
 
-bool GSEDeframer::process_bbframe(const uint8_t* payload, size_t gseLength)
-{
-    //fprintf(stderr, "GSELength:%x\n", gseLength);
-    unsigned int offset=0;
-    unsigned int fragID=0;
-    //START=1 STOP=0
-    if((payload[0]&0xC0)==0x80) {
-        fragID=payload[2];
-        unsigned int length=(payload[3]<<8) | payload[4];
-        if(fragmentor[fragID]!=0)
-            delete [] fragmentor[fragID];
-        fragmentor[fragID]=new unsigned char[length+2];
-        fragmentorLength[fragID]=length+2;
-        fragmentor[fragID][0]=payload[0];
-        fragmentor[fragID][1]=payload[1];
-        //SET START=1 STOP=1
-        fragmentor[fragID][0]|=0xC0;
-        memcpy(&fragmentor[fragID][2], &payload[5], gseLength-3);
-        fragmentorPos[fragID]=gseLength-1;
-    }
-    //START=0 STOP=0
-    else if((payload[0]&0xC0)==0x00) {
-        fragID=payload[2];
-        if(fragmentor[fragID]==0)
-            return true;
-        memcpy(&fragmentor[fragID][fragmentorPos[fragID]], &payload[3], gseLength-1);
-        fragmentorPos[fragID]+=gseLength-1;
-    }
-    //START=0 STOP=1
-    else if((payload[0]&0xC0)==0x40) {
-        fragID=payload[2];
-        if(fragmentor[fragID]==0)
-            return true;
-        memcpy(&fragmentor[fragID][fragmentorPos[fragID]], &payload[3], gseLength-5);
-        fragmentorPos[fragID]+=gseLength-1;
-        process_bbframe(fragmentor[fragID],fragmentorLength[fragID]);
-        delete [] fragmentor[fragID];
-        fragmentor[fragID]=0;
+void GSEDeframer::process_ipv4_pdu(std::vector<uint8_t>&& pdu) {
+    const uint8_t version = pdu[0] >> 4;
+    const uint8_t ihl = pdu[0] & 0x0F;
 
-    }
-    //START=1 STOP=1
-    else if((payload[0]&0xC0)==0xC0) {
-        if(payload[offset+2]==0x00 && payload[offset+3]==0x04) {
-            //LABEL
-            if((payload[0]&0x30)==0x01) {
-                offset += 3;
-            }
-            else if((payload[0]&0x30)==0x00) {
-                offset += 6;
-            }
-            //fprintf(stderr, "Start of 00 04 packet:%02x %02x %02x %02x %02x\n",payload[6], payload[7], payload[8], payload[9], payload[10]);
-            if(payload[6]&0x80) {
-                offset+=3;
-                offset += 2;
-                offset += 0x10;
-                if(isSelected(&payload[offset])) {
-                    offset +=0x10;
-                    active=payload[7];
-                }
-                else {
-                    active=0;
-                    return true;
-                }
-            }
-            else if(active==payload[7]) {
-                offset+=9;
-            }
-            else {
-                return true;
-            }
-        }
-        else if(payload[offset+2]==0x00 && payload[offset+3]==0x00) {
-            //LABEL
-            if((payload[0]&0x30)==0x01) {
-                offset += 3;
-            }
-            else if((payload[0]&0x30)==0x00) {
-                offset += 6;
-            }
-            offset += 2;
-            offset += 0x10;
-            if(isSelected(&payload[offset])) {
-                offset+=0x10;
-            }
-            else return true;
-        }
-        else if(payload[offset+2]==0x08 && payload[offset+3]==0x00) {
-            if((payload[0]&0x30)==0x01) {
-                offset += 3;
-            }
-            else if((payload[0]&0x30)==0x00) {
-                offset += 6;
-            }
-            offset += 0x10;
-            if(isSelected(&payload[offset])) {
-                offset+=0x10;
-            }
-            else return true;
-        }
-        m_extracted_frames.emplace_back(gseLength+2-offset);
-        std::copy(&payload[offset], &payload[gseLength+2], m_extracted_frames.back().begin());
+    if (version == 4 and pdu[9] == 0x11) { // UDP
+        size_t udp_header_offset = ihl * 4;
+        const size_t UDP_HEADER_SIZE = 4;
+#if DEBUG
+        const uint8_t *udp = pdu.data() + udp_header_offset;
+        uint16_t s_port = (udp[0] << 8) | udp[1];
+        uint16_t d_port = (udp[2] << 8) | udp[3];
+        uint16_t udp_len = (udp[4] << 8) | udp[5];
 
-        return true;
+        fprintf(stderr, "IPv4/UDP %d/%zu %d.%d.%d.%d:%d -> %d.%d.%d.%d:%d\n",
+                udp_len, pdu.size() - udp_header_offset,
+                pdu[12], pdu[13], pdu[14], pdu[15], s_port,
+                pdu[16], pdu[17], pdu[18], pdu[19], d_port);
+#endif
+
+        // I don't know what this additional header is.
+        // First byte is always 0x05, 2nd byte is 0x17 or 0x19, 3rd and 4th change
+        const size_t UNKNOWN_HEADER_LEN = 4;
+
+        m_extracted_frames.emplace_back(pdu.size() - udp_header_offset - UDP_HEADER_SIZE - UNKNOWN_HEADER_LEN);
+        std::copy(pdu.begin() + udp_header_offset + UDP_HEADER_SIZE + UNKNOWN_HEADER_LEN, pdu.end(),
+                m_extracted_frames.back().begin());
     }
-    //PADDING
-    else if((payload[0]&0xf0)==0x00) {
-        return false;
-    }
-    return true;
 }
 
 std::vector<std::vector<uint8_t> > GSEDeframer::get_deframed_packets()

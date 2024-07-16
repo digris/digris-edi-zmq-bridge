@@ -24,6 +24,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <unordered_map>
 #include <vector>
 
 struct bbheader {
@@ -60,6 +61,7 @@ private:
     void process_ts(const uint8_t *ts);
     void prepare_bbframe(const uint8_t* buf, size_t len);
     bool process_bbframe(const uint8_t *payload, size_t gseLength);
+    void process_ipv4_pdu(std::vector<uint8_t>&& pdu);
 
     std::deque<uint8_t> m_bbframe;
     std::vector<std::vector<uint8_t> > m_extracted_frames;
@@ -68,8 +70,13 @@ private:
 
     bool has_mis = true;
     uint8_t mis = 0;
-    int active=0;
-    unsigned char** fragmentor;
-    unsigned int fragmentorLength[256];
-    unsigned int fragmentorPos[256];
+
+    // keys are FragID
+    struct PDUData {
+        std::vector<uint8_t> pdu_data;
+        uint16_t total_length = 0;
+        uint16_t protocol_type = 0;
+        uint32_t crc = 0xFFffFFff;
+    };
+    std::unordered_map<uint8_t, PDUData > fragments;
 };
