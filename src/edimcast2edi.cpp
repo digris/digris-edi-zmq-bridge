@@ -26,7 +26,7 @@
 #include <memory>
 #include <thread>
 #include <vector>
-#include <optional>
+#include <variant>
 #include <cstring>
 #include <fcntl.h>
 #include <getopt.h>
@@ -39,6 +39,7 @@
 #include "edioutput/Transport.h"
 #include "EDIReceiver.hpp"
 #include "mpe_deframer.hpp"
+#include "gse_deframer.hpp"
 #include "common.h"
 
 using namespace std;
@@ -71,7 +72,8 @@ static void usage()
     cerr << " -p PORT        Receive UDP on PORT\n";
     cerr << " -b BINDTO      Bind receive socket to BINDTO address\n";
     cerr << " -m ADDRESS     Receive from multicast ADDRESS\n";
-    cerr << " -F PID:IP:PORT Decode MPE like fedi2eti\n\n";
+    cerr << " -F PID:IP:PORT Decode MPE like fedi2eti\n";
+    cerr << " -G MIS         Decode GSE like pts2bbf|bbfedi2eti, with additional RTP deframing beforehand\n\n";
 
     cerr << "Output settings\n";
     cerr << " -l PORT       Listen on port PORT\n\n";
@@ -120,12 +122,12 @@ int main(int argc, char **argv)
     string rx_bindto = "0.0.0.0";
     string rx_mcastaddr;
 
-    std::optional<MPEDeframer> mpe_deframer;
+    std::variant<std::monostate, MPEDeframer, GSEDeframer> deframer;
 
     int ch = 0;
     int index = 0;
     while (ch != -1) {
-        ch = getopt_long(argc, argv, "b:F:l:m:p:v", longopts, &index);
+        ch = getopt_long(argc, argv, "b:F:G:l:m:p:v", longopts, &index);
         switch (ch) {
             case -1:
                 break;
@@ -133,7 +135,10 @@ int main(int argc, char **argv)
                 //int live_stats_port = stoi(optarg);
                 break;
             case 'F':
-                mpe_deframer = MPEDeframer(optarg);
+                deframer = MPEDeframer(optarg);
+                break;
+            case 'G':
+                deframer = GSEDeframer(optarg);
                 break;
             case 'b':
                 rx_bindto = optarg;
@@ -204,12 +209,28 @@ int main(int argc, char **argv)
             catch (const Socket::UDPReceiver::Timeout&) {
             }
 
-            if (mpe_deframer) {
+            if (std::holds_alternative<MPEDeframer>(deframer)) {
+                auto& mpe_deframer = std::get<MPEDeframer>(deframer);
+
                 for (auto& rp : rx_packets) {
-                    mpe_deframer->process_packet(rp.packetdata);
+                    mpe_deframer.process_packet(rp.packetdata);
                 }
 
-                for (auto& deframed : mpe_deframer->get_deframed_packets()) {
+                for (auto& deframed : mpe_deframer.get_deframed_packets()) {
+                    EdiDecoder::Packet p;
+                    p.buf = std::move(deframed);
+                    p.received_on_port = 0;
+                    edi_rx.push_packet(p);
+                }
+            }
+            else if (std::holds_alternative<GSEDeframer>(deframer)) {
+                auto& gse_deframer = std::get<GSEDeframer>(deframer);
+
+                for (auto& rp : rx_packets) {
+                    gse_deframer.process_packet(rp.packetdata);
+                }
+
+                for (auto& deframed : gse_deframer.get_deframed_packets()) {
                     EdiDecoder::Packet p;
                     p.buf = std::move(deframed);
                     p.received_on_port = 0;

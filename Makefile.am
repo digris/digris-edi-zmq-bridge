@@ -21,6 +21,7 @@ digris_edimcast2edi_CXXFLAGS = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
 digris_edimcast2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
 digris_edimcast2edi_SOURCES  = src/edimcast2edi.cpp \
 							src/mpe_deframer.hpp src/mpe_deframer.cpp \
+							src/gse_deframer.hpp src/gse_deframer.cpp \
 							src/EDIReceiver.hpp src/EDIReceiver.cpp
 
 digris_zmq_converter_CFLAGS   = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
