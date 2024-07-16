@@ -32,7 +32,6 @@
 #include <vector>
 
 #include "gse_deframer.hpp"
-#include "lib/crc.h"
 
 using namespace std;
 
@@ -45,8 +44,6 @@ GSEDeframer::GSEDeframer(const char* optarg)
     mis = strtol(optarg, nullptr, 10);
 
     m_debug = getenv("DEBUG") ? 1 : 0;
-
-    init_crc32tab(0x04c11db7UL, 0); // ETSI TS 102 606-1 Clause 4.2.2, remove the x^32 factor
 }
 
 void GSEDeframer::process_packet(const std::vector<uint8_t>& udp_packet)
@@ -272,7 +269,6 @@ bool GSEDeframer::process_bbframe(const uint8_t* payload, size_t payloadLen)
                 std::back_inserter(fragments[frag_id].pdu_data));
         fragments[frag_id].total_length = total_length;
         fragments[frag_id].protocol_type = protocol_type;
-        fragments[frag_id].crc = crc32(fragments[frag_id].crc, payload + 3, gseLength - sizeof(frag_id));
     }
     else if (not start and not end) {
         uint8_t frag_id = payload[2];
@@ -282,7 +278,6 @@ bool GSEDeframer::process_bbframe(const uint8_t* payload, size_t payloadLen)
             std::copy(payload + offset,
                     payload + 2 + gseLength,
                     std::back_inserter(fragments.at(frag_id).pdu_data));
-            fragments[frag_id].crc = crc32(fragments[frag_id].crc, payload + 3, gseLength - sizeof(frag_id));
         }
     }
     else if (not start and end) {
@@ -293,14 +288,12 @@ bool GSEDeframer::process_bbframe(const uint8_t* payload, size_t payloadLen)
             std::copy(payload + offset,
                     payload + 2 + gseLength - CRCLEN,
                     std::back_inserter(fragments.at(frag_id).pdu_data));
-            fragments[frag_id].crc = crc32(fragments[frag_id].crc, payload + 3, gseLength - sizeof(frag_id));
 
 #if DEBUG
-            fprintf(stderr, "COMPLETE %d: prot=%04X len=%zu CRC at end: %08X\n",
+            fprintf(stderr, "COMPLETE %d: prot=%04X len=%zu\n",
                     (int)frag_id,
                     fragments[frag_id].protocol_type,
-                    fragments[frag_id].pdu_data.size(),
-                    fragments[frag_id].crc);
+                    fragments[frag_id].pdu_data.size());
 #endif
 
             if (fragments[frag_id].protocol_type == 0x0800) {

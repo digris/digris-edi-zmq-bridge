@@ -76,7 +76,6 @@ private:
         std::vector<uint8_t> pdu_data;
         uint16_t total_length = 0;
         uint16_t protocol_type = 0;
-        uint32_t crc = 0xFFffFFff;
     };
     std::unordered_map<uint8_t, PDUData > fragments;
 };
