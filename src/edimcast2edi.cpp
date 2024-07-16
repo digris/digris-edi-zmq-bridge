@@ -72,7 +72,7 @@ static void usage()
     cerr << " -p PORT        Receive UDP on PORT\n";
     cerr << " -b BINDTO      Bind receive socket to BINDTO address\n";
     cerr << " -m ADDRESS     Receive from multicast ADDRESS\n";
-    cerr << " -F PID:IP:PORT Decode MPE like fedi2eti\n\n";
+    cerr << " -F PID:IP:PORT Decode MPE like fedi2eti\n";
     cerr << " -G MIS         Decode GSE like pts2bbf|bbfedi2eti, with additional RTP deframing beforehand\n\n";
 
     cerr << "Output settings\n";
