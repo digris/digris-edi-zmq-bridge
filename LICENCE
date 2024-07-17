@@ -3,7 +3,7 @@ LICENSING
 Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009 Her Majesty
 the Queen in Right of Canada (Communications Research Center Canada)
 
-Copyright (C) 2020
+Copyright (C) 2024
 Matthias P. Braendli, http://www.opendigitalradio.org
 
 This file is part of the ODR-mmbTools.
@@ -32,3 +32,11 @@ Other parts
 -----------
 
 lib/edi/PFT.{hpp,cpp} are APACHE 2.0 licensed.
+
+src/gse_deframer contain code from from:
+
+ * bbfed2eti, LICENCE: Mozilla Public License, version 2.0
+ * pts2bbf, LICENCE: GPLv3
+
+src/mpe_deframer contains code from
+ * fedi2eti, LICENCE: Mozilla Public License, version 2.0

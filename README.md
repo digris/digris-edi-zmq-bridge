@@ -70,6 +70,12 @@ DIGRIS-EDIMCAST2EDI
 
 This tool can receive unicast and multicast EDI/UDP, and present that to multiple listeneners over TCP.
 
+For satellite reception, it can deframe EDI carried in MPE (see `-F` option) and GSE (see `-G` option).
+
+The GSE deframing has been tested with a TBS6903-X PCIe card, and `dvbstream -c 0 8192 -i 226.29.3.1 -r 5000` and
+`digris-edimcast2edi -m 226.29.3.1 -p 5000 -b 172.30.201.81 -G 1 -l 8971`
+
+
 DIGRIS-ZMQ-CONVERTER
 ====================
 
@@ -80,7 +86,11 @@ ODR-DabMux and generate an EDI or ZMQ stream.
 Installation
 ============
 
-Requirements: A C++17 compiler, autotools (debian packets `build-essential automake libtool`)
+Requirements:
+
+ * A C++17 compiler
+ * autotools (debian packets `build-essential automake libtool`)
+ * libzmq (debian packet `libzmq3-dev`)
 
     ./bootstrap.sh
     ./configure

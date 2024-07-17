@@ -1,16 +1,22 @@
-libedi2edi.a
+archive
+compile_commands.json
 
 *.o
 *.Po
 
 .*.swp
 .directory
+.cache
 
-odr-edi2edi
+libedi2edi.a
+digris-edi2edi
+digris-edimcast2edi
+digris-zmq-converter
 
 aclocal.m4
 build-aux
 configure
+configure~
 Makefile.in
 Makefile
 autom4te.cache
