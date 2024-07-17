@@ -1,4 +1,4 @@
-# Copyright (C) 2022 Matthias P. Braendli, http://opendigitalradio.org
+# Copyright (C) 2024 Matthias P. Braendli, http://opendigitalradio.org
 AC_PREREQ([2.69])
 AC_INIT([DIGRIS-EDI-ZMQ-BRIDGE],[0.6.0],[matthias.braendli@mpb.li])
 AC_CONFIG_AUX_DIR([build-aux])

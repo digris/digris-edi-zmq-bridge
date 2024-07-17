@@ -1,9 +1,9 @@
-digris distribution bridges
-===========================
+digris EDI/ZMQ bridge
+=====================
 
 Developed for Opendigitalradio by digris: https://www.digris.ch
 
-This repository contains three tools:
+This repository contains three useful tools for EDI distribution over ZMQ, TCP and UDP:
 
 * digris-edi2edi
 * digris-edimcast2edi

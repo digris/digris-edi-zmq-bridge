@@ -1,5 +1,18 @@
 This file contains information about the changes done to
-ODR-EDI2EDI in this repository
+the tools in this repository
+
+2024-07-17: Matthias P. Braendli <matthias@mpb.li>
+	(v0.6.0):
+		Rename project to digris-contrib-distrib-bridge, and
+		rename binaries.
+		Add digris-edimcast2edi tool for EDI/UDP to EDI/TCP conversion.
+		Add DVB MPE and GSE deframing for sat reception.
+		Move zmq2edi into this repo as digris-zmq-converter, also add
+		EDI2ZMQ functionality.
+
+2023-03-25: Matthias P. Braendli <matthias@mpb.li>
+	(v0.5.1):
+		Replace f-strings in edi2edi_remote.py
 
 2022-10-04: Matthias P. Braendli <matthias@mpb.li>
 	(v0.5.0):
