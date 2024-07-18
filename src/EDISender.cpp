@@ -273,9 +273,9 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
         }
 
         if (not tp.afpacket.empty()) {
-            copy(tp.afpacket.begin() + EdiDecoder::AFPACKET_HEADER_LEN,
+            std::copy(tp.afpacket.begin() + EdiDecoder::AFPACKET_HEADER_LEN,
                     tp.afpacket.end(),
-                    edi_tagpacket.raw_tagpacket.begin());
+                    std::back_inserter(edi_tagpacket.raw_tagpacket));
         }
 
         _edi_sender->write(edi_tagpacket);
