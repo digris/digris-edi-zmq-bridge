@@ -11,28 +11,28 @@ noinst_LIBRARIES = libedi2edi.a
 
 INCLUDE=-Ilib -Isrc
 
-digris_edi2edi_CFLAGS   = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
-digris_edi2edi_CXXFLAGS = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
+digris_edi2edi_CFLAGS   = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
+digris_edi2edi_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
 digris_edi2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS) $(ZMQ_LIBS)
 digris_edi2edi_SOURCES  = src/edi2edi.h src/edi2edi.cpp
 
-digris_edimcast2edi_CFLAGS   = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
-digris_edimcast2edi_CXXFLAGS = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
+digris_edimcast2edi_CFLAGS   = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
+digris_edimcast2edi_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
 digris_edimcast2edi_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
 digris_edimcast2edi_SOURCES  = src/edimcast2edi.cpp \
 							src/mpe_deframer.hpp src/mpe_deframer.cpp \
 							src/gse_deframer.hpp src/gse_deframer.cpp \
 							src/EDIReceiver.hpp src/EDIReceiver.cpp
 
-digris_zmq_converter_CFLAGS   = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
-digris_zmq_converter_CXXFLAGS = -Wall $(INCLUDE) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
+digris_zmq_converter_CFLAGS   = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
+digris_zmq_converter_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
 digris_zmq_converter_LDADD    = libedi2edi.a $(ZMQ_LIBS)
 digris_zmq_converter_SOURCES  = src/zmq/main.cpp \
 					   src/zmq/Sender.h \
 					   src/zmq/Sender.cpp
 
-libedi2edi_a_CFLAGS   = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
-libedi2edi_a_CXXFLAGS = -Wall $(INCLUDE) $(GITVERSION_FLAGS)
+libedi2edi_a_CFLAGS   = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
+libedi2edi_a_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
 libedi2edi_a_SOURCES  = src/receiver.h src/receiver.cpp \
 					   src/EDISender.h src/EDISender.cpp \
 					   src/zmq/edi2zmq.hpp src/zmq/edi2zmq.cpp \
@@ -67,6 +67,6 @@ libedi2edi_a_SOURCES  = src/receiver.h src/receiver.cpp \
 					   lib/fec/init_rs.h lib/fec/init_rs_char.c \
 					   lib/fec/rs-common.h
 
-EXTRA_DIST	= COPYING NEWS README.md ChangeLog \
+EXTRA_DIST	= LICENCE COPYING README.md ChangeLog \
 			  lib/fec/README.md src/fec/LICENSE
 
