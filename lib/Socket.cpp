@@ -198,7 +198,7 @@ void UDPSocket::reinit(int port, const std::string& name)
 void UDPSocket::post_init() {
     int pktinfo = 1;
     if (setsockopt(m_sock, IPPROTO_IP, IP_PKTINFO, &pktinfo, sizeof(pktinfo)) == SOCKET_ERROR) {
-        throw runtime_error(string("Can't join request pktinfo: ") + strerror(errno));
+        throw runtime_error(string("Can't request pktinfo: ") + strerror(errno));
     }
 
 }
