@@ -24,7 +24,7 @@
 
 #include "Socket.h"
 
-#include <iostream>
+#include <stdexcept>
 #include <cstdio>
 #include <cstring>
 #include <cerrno>
@@ -106,16 +106,20 @@ UDPSocket::UDPSocket(UDPSocket&& other)
 {
     m_sock = other.m_sock;
     m_port = other.m_port;
+    m_multicast_source = other.m_multicast_source;
     other.m_port = 0;
     other.m_sock = INVALID_SOCKET;
+    other.m_multicast_source = "";
 }
 
 const UDPSocket& UDPSocket::operator=(UDPSocket&& other)
 {
     m_sock = other.m_sock;
     m_port = other.m_port;
+    m_multicast_source = other.m_multicast_source;
     other.m_port = 0;
     other.m_sock = INVALID_SOCKET;
+    other.m_multicast_source = "";
     return *this;
 }
 
@@ -211,6 +215,7 @@ void UDPSocket::init_receive_multicast(int port, const string& local_if_addr, co
 
     m_port = port;
     m_sock = ::socket(AF_INET, SOCK_DGRAM, 0);
+    post_init();
 
     int reuse_setting = 1;
     if (setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, &reuse_setting, sizeof(reuse_setting)) == SOCKET_ERROR) {
