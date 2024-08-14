@@ -85,12 +85,15 @@ static void usage()
     cerr << " -c <host:port>            Add enabled input connecting to given host and port using TCP.\n";
     cerr << " -F <host:port>            Add disabled input connecting to given host and port using TCP.\n";
 
-    cerr << "\nEDI Output options\n";
+    cerr << "\nEDI/UDP Output options\n";
     cerr << " -p <destination port>     Set the destination port.\n";
     cerr << " -d <destination ip>       Set the destination ip.\n";
     cerr << " -s <source port>          Set the source port.\n";
     cerr << " -S <source ip>            Select the source IP in case we want to use multicast.\n";
-    cerr << " -t <ttl>                  Set the packet's TTL.\n\n";
+    cerr << " -t <ttl>                  Set the packet's TTL.\n";
+
+    cerr << "\nEDI/TCP Output options\n";
+    cerr << " -T <port>                 Add EDI/TCP listener on given port.\n\n";
 
     cerr << "\nZMQ Output options\n";
     cerr << " -z <intf:port>            Set the ZMQ endpoint, e.g. *:8001 to listen on all interfaces.\n";
@@ -137,7 +140,7 @@ int Main::start(int argc, char **argv)
     int ch = 0;
     int index = 0;
     while (ch != -1) {
-        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:f:i:Dvb:w:x:z:h", longopts, &index);
+        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:T:f:i:Dvb:w:x:z:h", longopts, &index);
         switch (ch) {
             case -1:
                 break;
@@ -229,6 +232,14 @@ int Main::start(int argc, char **argv)
                 break;
             case 'z':
                 eti_zmq_sender.open(optarg);
+                break;
+            case 'T':
+                {
+                    auto dest = make_shared<edi::tcp_server_t>();
+                    dest->listen_port = stoi(optarg);
+                    etiLog.level(info) << "Add TCP dest " << dest->listen_port;
+                    edi_conf.destinations.push_back(std::move(dest));
+                }
                 break;
             case 'h':
             default:
@@ -483,7 +494,7 @@ void Main::add_edi_destination()
                 to_string(edi_conf.destinations.size() + 1));
     }
 
-    edi_conf.destinations.push_back(move(edi_destination));
+    edi_conf.destinations.push_back(std::move(edi_destination));
     edi_destination = make_shared<edi::udp_destination_t>();
 
     source_port_set = false;
