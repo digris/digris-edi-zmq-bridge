@@ -35,9 +35,6 @@
 #include <algorithm>
 #include <limits>
 
-// This is a remnant of the -x option
-static const bool DROP_LATE = true;
-
 using namespace std;
 
 EDISender::~EDISender()
@@ -238,7 +235,7 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
         std::this_thread::sleep_for(wait_time);
     }
 
-    if (late and DROP_LATE) {
+    if (late and _settings.drop_late) {
         num_dropped.fetch_add(1);
         return;
     }

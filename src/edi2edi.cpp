@@ -110,6 +110,7 @@ static const struct option longopts[] = {
     {"live-stats-port", required_argument, 0, 2},
     {"disable-pft", no_argument, 0, 3},
     {"align", required_argument, 0, 4},
+    {"no-drop-late", no_argument, 0, 5},
     {0, 0, 0, 0}
 };
 
@@ -155,6 +156,9 @@ int Main::start(int argc, char **argv)
                 break;
             case 4: // --align
                 edi_conf.tagpacket_alignment = stoi(optarg);
+                break;
+            case 5: // --no-drop-late
+                edisendersettings.drop_late = false;
                 break;
             case 'm':
                 if (strcmp(optarg, "switch") == 0) {

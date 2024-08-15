@@ -47,6 +47,7 @@ constexpr long DEFAULT_BACKOFF = 5000;
 struct EDISenderSettings {
     int live_stats_port = 0;
     int delay_ms = -500;
+    bool drop_late = true;
     std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
 };
 
