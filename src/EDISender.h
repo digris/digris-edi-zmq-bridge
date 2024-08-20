@@ -3,7 +3,7 @@
    2011, 2012 Her Majesty the Queen in Right of Canada (Communications
    Research Center Canada)
 
-   Copyright (C) 2022
+   Copyright (C) 2024
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -26,17 +26,13 @@
 */
 
 #pragma once
-#include <iostream>
-#include <iterator>
-#include <chrono>
 #include <atomic>
-#include <thread>
-#include <mutex>
+#include <chrono>
 #include <list>
-#include <vector>
+#include <mutex>
+#include <optional>
+#include <thread>
 #include "receiver.h"
-#include "edioutput/TagItems.h"
-#include "edioutput/TagPacket.h"
 #include "edioutput/Transport.h"
 #include "edi/common.hpp"
 
@@ -46,7 +42,7 @@ constexpr long DEFAULT_BACKOFF = 5000;
 
 struct EDISenderSettings {
     int live_stats_port = 0;
-    int delay_ms = -500;
+    std::optional<int> delay_ms = std::nullopt;
     bool drop_late = true;
     std::chrono::steady_clock::duration backoff = std::chrono::milliseconds(DEFAULT_BACKOFF);
 };

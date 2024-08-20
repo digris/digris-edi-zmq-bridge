@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2022
+   Copyright (C) 2024
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -22,18 +22,12 @@
  */
 
 #include <chrono>
-#include <iostream>
-#include <iterator>
 #include <memory>
-#include <thread>
 #include <vector>
 #include <cmath>
 #include <cstring>
 #include "receiver.h"
 #include "EDISender.h"
-#include "edioutput/TagItems.h"
-#include "edioutput/TagPacket.h"
-#include "edioutput/Transport.h"
 #include "zmq/edi2zmq.hpp"
 
 constexpr long DEFAULT_SWITCH_DELAY = 2000;

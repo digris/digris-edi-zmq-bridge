@@ -3,7 +3,7 @@
    2011, 2012 Her Majesty the Queen in Right of Canada (Communications
    Research Center Canada)
 
-   Copyright (C) 2020
+   Copyright (C) 2024
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -29,11 +29,7 @@
 #include "Log.h"
 #include <cmath>
 #include <cstring>
-#include <iomanip>
-#include <numeric>
-#include <map>
 #include <algorithm>
-#include <limits>
 
 using namespace std;
 
@@ -73,19 +69,40 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
         ss << timestr;
     }
 
+    bool late = false;
+
     using namespace chrono;
-    const auto t_frame = tp.timestamp.to_system_clock();
-    const auto t_release = t_frame + milliseconds(_settings.delay_ms);
-    const auto margin = t_release - t_now;
-    const auto margin_ms = chrono::duration_cast<chrono::milliseconds>(margin).count();
-    const bool late = t_release < t_now;
 
     std::unique_lock<std::mutex> lock(_mutex);
-    ss << " P " << _pending_tagpackets.size() << " dlfc  " <<
-        tp.dlfc << " margin " << margin_ms << " from " << tp.hostnames;
+
+    if (_settings.delay_ms.has_value()) {
+        const auto delay = milliseconds(*_settings.delay_ms);
+
+        if (tp.timestamp.seconds == 0) {
+            late = true;
+
+            ss << " P " << _pending_tagpackets.size() << " dlfc " <<
+                tp.dlfc << " no seconds timestamp from " << tp.hostnames;
+        }
+        else {
+            const auto t_frame = tp.timestamp.to_system_clock();
+            const auto t_release = t_frame + delay;
+            const auto margin = t_release - t_now;
+            const auto margin_ms = chrono::duration_cast<chrono::milliseconds>(margin).count();
+
+            ss << " P " << _pending_tagpackets.size() << " dlfc " <<
+                tp.dlfc << " margin " << margin_ms << " from " << tp.hostnames;
+
+            late = t_release < t_now;
+        }
+    }
+    else {
+        ss << " P " << _pending_tagpackets.size() << " dlfc  " <<
+            tp.dlfc << " wait disabled, from " << tp.hostnames;
+    }
 
     // If we receive a packet we already handed off to the other thread
-    if (_most_recent_timestamp.valid() and _most_recent_timestamp >= tp.timestamp) {
+    if (_most_recent_timestamp.is_valid() and _most_recent_timestamp >= tp.timestamp) {
         ss << " dup&late";
         r->num_late++;
         num_dropped.fetch_add(1);
@@ -147,6 +164,9 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
 
     lock.unlock();
     ss << "\n";
+    if (_edi_conf.verbose) {
+        etiLog.level(info) << ss.str();
+    }
     if (_settings.live_stats_port > 0) {
         try {
             Socket::UDPSocket udp;
@@ -219,25 +239,24 @@ void EDISender::reset_counters()
 
 void EDISender::send_tagpacket(tagpacket_t& tp)
 {
-    // Wait until our time is tist_delay after the TIST before
-    // we release that frame
-
     using namespace std::chrono;
+    if (_settings.delay_ms.has_value()) {
+        // Wait until our time is tist_delay after the TIST before
+        // we release that frame
+        const auto t_frame = tp.timestamp.to_system_clock();
+        const auto t_release = t_frame + milliseconds(*_settings.delay_ms);
+        const auto t_now = system_clock::now();
+        const bool late = t_release < t_now;
 
-    const auto t_frame = tp.timestamp.to_system_clock();
-    const auto t_release = t_frame + milliseconds(_settings.delay_ms);
-    const auto t_now = system_clock::now();
+        if (not late) {
+            const auto wait_time = t_release - t_now;
+            std::this_thread::sleep_for(wait_time);
+        }
 
-    const bool late = t_release < t_now;
-
-    if (not late) {
-        const auto wait_time = t_release - t_now;
-        std::this_thread::sleep_for(wait_time);
-    }
-
-    if (late and _settings.drop_late) {
-        num_dropped.fetch_add(1);
-        return;
+        if (late and _settings.drop_late) {
+            num_dropped.fetch_add(1);
+            return;
+        }
     }
 
     const auto t_now_steady = steady_clock::now();

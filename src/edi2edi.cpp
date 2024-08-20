@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2022
+   Copyright (C) 2024
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -294,7 +294,12 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
-    etiLog.level(info) << "Setting up EDI2EDI with delay " << edisendersettings.delay_ms << " ms. ";
+    if (edisendersettings.delay_ms.has_value()) {
+        etiLog.level(info) << "Setting up EDI2EDI with delay " << *edisendersettings.delay_ms << " ms. ";
+    }
+    else {
+        etiLog.level(info) << "Setting up EDI2EDI without delay ";
+    }
 
     if (not rc_socket_name.empty()) {
         try {
@@ -657,7 +662,14 @@ string Main::handle_rc_command(const string& cmd)
     if (cmd.rfind("get settings", 0) == 0) {
 
         stringstream ss;
-        ss << "{ \"delay\": " << edisendersettings.delay_ms <<
+        ss << "{ \"delay\": ";
+        if (edisendersettings.delay_ms.has_value()) {
+            ss << *edisendersettings.delay_ms;
+        }
+        else {
+            ss << "null";
+        }
+        ss <<
             ", \"backoff\": " << duration_cast<milliseconds>(edisendersettings.backoff).count() <<
             ", \"live_stats_port\": " << edisendersettings.live_stats_port <<
             ", \"verbosity\": " << verbosity <<
@@ -696,11 +708,18 @@ string Main::handle_rc_command(const string& cmd)
                   " \"margin\": {" << std::fixed <<
                   "   \"mean\": " << margin_stats.mean <<
                   ",  \"min\": " << margin_stats.min <<
-                  ",  \"max\": " << margin_stats.max <<
-                  ",  \"mean_to_delivery\": " << margin_stats.mean + edisendersettings.delay_ms <<
-                  ",  \"min_to_delivery\": " << margin_stats.min + edisendersettings.delay_ms <<
-                  ",  \"max_to_delivery\": " << margin_stats.max + edisendersettings.delay_ms <<
-                  ",  \"stdev\": " << margin_stats.stdev <<
+                  ",  \"max\": " << margin_stats.max;
+
+            if (edisendersettings.delay_ms.has_value()) {
+                ss << ",  \"mean_to_delivery\": " << margin_stats.mean + *edisendersettings.delay_ms <<
+                    ",  \"min_to_delivery\": " << margin_stats.min + *edisendersettings.delay_ms <<
+                    ",  \"max_to_delivery\": " << margin_stats.max + *edisendersettings.delay_ms;
+            }
+            else {
+                ss << ", \"mean_to_delivery\": null, \"min_to_delivery\": null, \"max_to_delivery\": null";
+            }
+
+            ss << ",  \"stdev\": " << margin_stats.stdev <<
                   ",  \"num_measurements\": " << margin_stats.num_measurements <<
                   "}, \"num_late_frames\": " << it->num_late <<
                   ", \"num_connects\": " << it->source.num_connects <<
@@ -773,13 +792,20 @@ string Main::handle_rc_command(const string& cmd)
         }
     }
     else if (cmd.rfind("set delay ", 0) == 0) {
-        auto value = stoi(cmd.substr(10, cmd.size()));
-        if (value < -100000 or value > 100000) {
-            throw invalid_argument("delay value out of bounds +/- 100s");
+        const auto strvalue = cmd.substr(10, cmd.size());
+        if (strvalue == "null") {
+            edisendersettings.delay_ms = nullopt;
+            etiLog.level(info) << "RC disabling delay";
         }
-        edisendersettings.delay_ms = value;
+        else {
+            auto value = stoi(strvalue);
+            if (value < -100000 or value > 100000) {
+                throw invalid_argument("delay value out of bounds +/- 100s");
+            }
+            edisendersettings.delay_ms = value;
+            etiLog.level(info) << "RC setting delay to " << value;
+        }
         edisender.update_settings(edisendersettings);
-        etiLog.level(info) << "RC setting delay to " << value;
     }
     else if (cmd.rfind("set backoff ", 0) == 0) {
         auto value = stoi(cmd.substr(12, cmd.size()));
