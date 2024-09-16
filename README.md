@@ -72,8 +72,14 @@ This tool can receive unicast and multicast EDI/UDP, and present that to multipl
 
 For satellite reception, it can deframe EDI carried in MPE (see `-F` option) and GSE (see `-G` option).
 
+MPE deframing does not expect an RTP header. Example scenario:
+
+    tune-s2 12567 V 17015 -system DVB-S2 -lnb UNIVERSAL -modulation 8PSK -fec 2/3
+    dvbstream -c 0 8192 -i 127.0.0.1 -r 5000 -udp
+    digris-edimcast2edi -m 127.0.0.1 -p 5000 -b 127.0.0.1 -F 101:239.16.242.17:60017 -l 8971
+
 The GSE deframing has been tested with a TBS6903-X PCIe card, and `dvbstream -c 0 8192 -i 226.29.3.1 -r 5000` and
-`digris-edimcast2edi -m 226.29.3.1 -p 5000 -b 172.30.201.81 -G 1 -l 8971`
+`digris-edimcast2edi -m 226.29.3.1 -p 5000 -b 172.30.201.81 -G 1 -l 8971`. GSE deframing expects an RTP header.
 
 
 DIGRIS-ZMQ-CONVERTER
