@@ -16,7 +16,8 @@
 
     Adapted to odr-edi2edi by mpb in summer 2024
  */
-
+#include <vector>
+#include <sstream>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -29,7 +30,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
-#include <vector>
 
 #include "gse_deframer.hpp"
 
@@ -37,11 +37,35 @@ using namespace std;
 
 constexpr size_t TS_PACKET_SIZE = 188;
 
+constexpr bool HAS_MIS = true;
 
-GSEDeframer::GSEDeframer(const char* optarg)
+GSEDeframer::GSEDeframer(const char *triplet)
 {
-    has_mis = true;
-    mis = strtol(optarg, nullptr, 10);
+    std::stringstream ss(triplet);
+    std::string item;
+    std::vector<std::string> elems;
+    while (std::getline(ss, item, ':')) {
+        elems.push_back(std::move(item));
+    }
+
+    if (elems.size() == 1) {
+        m_mis = strtol(optarg, nullptr, 10);
+    }
+    else if (elems.size() == 3) {
+        m_mis = std::strtol(elems[0].c_str(), nullptr, 10);
+        std::string ip = elems[1];
+
+        uint32_t ip_u32 = 0;
+        if (inet_pton(AF_INET, ip.c_str(), &ip_u32) != 1) {
+            throw std::runtime_error("Invalid ip: " + ip);
+        }
+
+        m_ip = ip_u32;
+        m_port = std::strtol(elems[2].c_str(), nullptr, 10);
+    }
+    else {
+        throw std::runtime_error("PID:IP:PORT needs to have 3 elements!");
+    }
 
     m_debug = getenv("DEBUG") ? 1 : 0;
 }
@@ -181,7 +205,7 @@ void GSEDeframer::prepare_bbframe(const uint8_t* buf, size_t len)
         return;
     }
 
-    if (has_mis and maType2 != mis) {
+    if (HAS_MIS and maType2 != m_mis) {
         for (size_t i = 0; i < 1 + 10 + bblength; i++) {
             m_bbframe.pop_front();
         }
@@ -330,18 +354,47 @@ void GSEDeframer::process_ipv4_pdu(std::vector<uint8_t>&& pdu) {
     const uint8_t ihl = pdu[0] & 0x0F;
 
     if (version == 4 and pdu[9] == 0x11) { // UDP
+        /* Source address
+        unsigned char src_ip[4];
+        src_ip[0] = pdu[12];
+        src_ip[1] = pdu[13];
+        src_ip[2] = pdu[14];
+        src_ip[3] = pdu[15]; */
+
+        unsigned char dst_ip[4];
+        dst_ip[0] = pdu[16];
+        dst_ip[1] = pdu[17];
+        dst_ip[2] = pdu[18];
+        dst_ip[3] = pdu[19];
+
         size_t udp_header_offset = ihl * 4;
         const size_t UDP_HEADER_SIZE = 4;
-#if DEBUG
-        const uint8_t *udp = pdu.data() + udp_header_offset;
-        uint16_t s_port = (udp[0] << 8) | udp[1];
-        uint16_t d_port = (udp[2] << 8) | udp[3];
-        uint16_t udp_len = (udp[4] << 8) | udp[5];
 
-        fprintf(stderr, "IPv4/UDP %d/%zu %d.%d.%d.%d:%d -> %d.%d.%d.%d:%d\n",
-                udp_len, pdu.size() - udp_header_offset,
-                pdu[12], pdu[13], pdu[14], pdu[15], s_port,
-                pdu[16], pdu[17], pdu[18], pdu[19], d_port);
+        if (m_ip != 0 and m_port != 0) {
+            char dbuf[18];
+            sprintf(dbuf, "%u.%u.%u.%u", dst_ip[0], dst_ip[1], dst_ip[2], dst_ip[3]);
+            uint32_t dip;
+
+            /* skip unknown ip or port */
+            if (inet_pton (AF_INET, dbuf, &dip) != 1) return;
+            if (dip != m_ip) return;
+            const uint8_t *udp = pdu.data() + udp_header_offset;
+            const uint16_t dst_port = (udp[2] << 8) | udp[3];
+            if (dst_port != m_port) return;
+        }
+
+#if DEBUG
+        {
+            const uint8_t *udp = pdu.data() + udp_header_offset;
+            uint16_t s_port = (udp[0] << 8) | udp[1];
+            uint16_t d_port = (udp[2] << 8) | udp[3];
+            uint16_t udp_len = (udp[4] << 8) | udp[5];
+
+            fprintf(stderr, "IPv4/UDP %d/%zu %d.%d.%d.%d:%d -> %d.%d.%d.%d:%d\n",
+                    udp_len, pdu.size() - udp_header_offset,
+                    pdu[12], pdu[13], pdu[14], pdu[15], s_port,
+                    pdu[16], pdu[17], pdu[18], pdu[19], d_port);
+        }
 #endif
 
         // I don't know what this additional header is.

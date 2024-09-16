@@ -51,7 +51,8 @@ struct layer3 {
 
 class GSEDeframer {
 public:
-    GSEDeframer(const char* optarg);
+    // triplet is mid:ip:port, or only mid if no IP filtering is needed
+    GSEDeframer(const char *triplet);
 
     void process_packet(const std::vector<uint8_t>& udp_packet);
 
@@ -68,8 +69,11 @@ private:
 
     bool m_debug = false;
 
-    bool has_mis = true;
-    uint8_t mis = 0;
+    uint8_t m_mis = 0;
+
+    // both 0 means no filtering
+    uint16_t m_port = 0;
+    uint32_t m_ip = 0;
 
     // keys are FragID
     struct PDUData {

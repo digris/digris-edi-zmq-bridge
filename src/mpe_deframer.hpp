@@ -70,6 +70,7 @@ struct mpegts_psi_t {
 
 class MPEDeframer {
 public:
+    // triplet is pid:ip:port
     MPEDeframer(const std::string& triplet);
 
     void process_packet(const std::vector<uint8_t>& udp_packet);

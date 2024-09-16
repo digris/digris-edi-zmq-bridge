@@ -74,6 +74,7 @@ static void usage()
     cerr << " -m ADDRESS     Receive from multicast ADDRESS\n";
     cerr << " -F PID:IP:PORT Decode MPE like fedi2eti\n";
     cerr << " -G MIS         Decode GSE like pts2bbf|bbfedi2eti, with additional RTP deframing beforehand\n\n";
+    cerr << " -G MIS:IP:PORT As above, but only extract packets matching the IP:PORT filter\n\n";
 
     cerr << "Output settings\n";
     cerr << " -l PORT       Listen on port PORT\n\n";
@@ -193,6 +194,7 @@ int main(int argc, char **argv)
         Socket::UDPReceiver rx;
 
         EdiDecoder::EDIReceiver edi_rx(edi_sender);
+        edi_rx.set_verbose(verbosity > 2);
 
         rx.add_receive_port(rx_port, rx_bindto, rx_mcastaddr);
 
