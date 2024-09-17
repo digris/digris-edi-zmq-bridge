@@ -51,7 +51,7 @@ struct layer3 {
 
 class GSEDeframer {
 public:
-    // triplet is mid:ip:port, or only mid if no IP filtering is needed
+    // Triplet is MIS:IP:PORT, or only MIS if no IP filtering is needed
     GSEDeframer(const char *triplet);
 
     void process_packet(const std::vector<uint8_t>& udp_packet);
