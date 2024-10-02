@@ -232,9 +232,18 @@ void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data)
         //  FL 11 bits
 
         // FL: EN 300 799 5.3.6
-        uint16_t FL = NST + 1 + m_fic.size();
+        if ((m_fic.size() % 4) != 0) {
+            throw std::logic_error("FIC size is not multiple of 4");
+        }
+
+        // FL is length in words of:
+        //            STC + EOH + FIC + all subchannels
+        uint16_t FL = NST + 1   + m_fic.size() / 4;
         for (const auto& subch : m_subchannels) {
-            FL += subch.mst.size();
+            if ((subch.mst.size() % 4) != 0) {
+                throw std::logic_error("SubCh size is not multiple of 4");
+            }
+            FL += subch.mst.size() / 4;
         }
 
         const uint16_t fp_mid_fl = (m_fc.fp << 13) | (m_fc.mid << 11) | FL;
