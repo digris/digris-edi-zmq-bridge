@@ -98,11 +98,12 @@ Requirements:
  * autotools (debian packets `build-essential automake libtool`)
  * libzmq (debian packet `libzmq3-dev`)
 
+```
     ./bootstrap.sh
     ./configure
     make
     sudo make install
-
+```
 
 Licence
 =======
