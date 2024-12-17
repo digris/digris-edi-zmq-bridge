@@ -9,6 +9,8 @@ This repository contains three useful tools for EDI distribution over ZMQ, TCP a
 * digris-edimcast2edi
 * digris-zmq-converter
 
+You can find some example usage scenarios in SCENARIOS.md
+
 DIGRIS-EDI2EDI
 ==============
 
