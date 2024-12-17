@@ -9,7 +9,7 @@
 
 
   * `-C` Waiting chrony sync before start
-  * `-c` Connect to EDI/tcp source `edi-ch.digris.net:8861`
+  * `-c` Connect to EDI/tcp source `edi1.digris.net:8861`
   * `-d` Send EDI/udp to `226.33.9.1:5000` with FEC 3 `-f`
   * `-w` Delivering 1000ms before (`-1000`) the timestamp expire.
 
@@ -56,4 +56,3 @@ Receive from satellite receiver the UDP multicast on 226.29.2.4:5000 and filteri
 
 You can connect many time to 8050, only one stream coming from edi1.digris.net
 
-## ZMQ to EDI/udp (deprecated)
