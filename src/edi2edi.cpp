@@ -25,7 +25,6 @@
 #include <chrono>
 #include <iostream>
 #include <iomanip>
-#include <iterator>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -85,22 +84,25 @@ static void usage()
     cerr << " -c <host:port>            Add enabled input connecting to given host and port using TCP.\n";
     cerr << " -F <host:port>            Add disabled input connecting to given host and port using TCP.\n";
 
-    cerr << "\nEDI/UDP Output options\n";
+    cerr << "\nEDI/UDP Output options, normally with PFT enabled.\n";
     cerr << " -p <destination port>     Set the destination port.\n";
     cerr << " -d <destination ip>       Set the destination ip.\n";
     cerr << " -s <source port>          Set the source port.\n";
     cerr << " -S <source ip>            Select the source IP in case we want to use multicast.\n";
     cerr << " -t <ttl>                  Set the packet's TTL.\n";
 
-    cerr << "\nEDI/TCP Output options\n";
+    cerr << "\nEDI/TCP Output options, normally with PFT disabled.\n";
     cerr << " -T <port>                 Add EDI/TCP listener on given port.\n\n";
+
+    cerr << "When specifying both EDI/TCP and EDI/UDP output, you must set one of the following override options:\n";
+    cerr << " --without-pft             All outputs send AF Packets\n";
+    cerr << " --with-pft                All outputs send PF Packets\n";
 
     cerr << "\nZMQ Output options\n";
     cerr << " -z <intf:port>            Set the ZMQ endpoint, e.g. *:8001 to listen on all interfaces.\n";
 
     cerr << "Debugging utilities\n";
     cerr << " --live-stats-port <port>  Send live statistics to UDP 127.0.0.1:PORT. Receive with nc -uklp PORT\n\n";
-    cerr << " --disable-pft             Disable PFT and send AFPackets. (Use only when sending to localhost)\n";
 
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
 }
@@ -108,9 +110,10 @@ static void usage()
 static const struct option longopts[] = {
     {"switch-delay", required_argument, 0, 1},
     {"live-stats-port", required_argument, 0, 2},
-    {"disable-pft", no_argument, 0, 3},
-    {"align", required_argument, 0, 4},
-    {"no-drop-late", no_argument, 0, 5},
+    {"without-pft", no_argument, 0, 3},
+    {"with-pft", no_argument, 0, 4},
+    {"align", required_argument, 0, 5},
+    {"no-drop-late", no_argument, 0, 6},
     {0, 0, 0, 0}
 };
 
@@ -131,12 +134,12 @@ static string timepoint_to_string(const chrono::system_clock::time_point& tp)
 
 int Main::start(int argc, char **argv)
 {
-    edi_conf.enable_pft = true;
-
     if (argc == 1) {
         usage();
         return 1;
     }
+
+    optional<bool> force_pft = nullopt;
 
     int ch = 0;
     int index = 0;
@@ -151,13 +154,24 @@ int Main::start(int argc, char **argv)
             case 2: // --live-stats-port
                 edisendersettings.live_stats_port = stoi(optarg);
                 break;
-            case 3: // --disable-pft
-                edi_conf.enable_pft = false;
+            case 3: // --without-pft
+                if (force_pft.has_value()) {
+                    etiLog.level(error) << "Cannot set both --with-pft and --without-pft";
+                    return 1;
+                }
+                force_pft = false;
                 break;
-            case 4: // --align
+            case 4: // --with-pft
+                if (force_pft.has_value()) {
+                    etiLog.level(error) << "Cannot set both --with-pft and --without-pft";
+                    return 1;
+                }
+                force_pft = true;
+                break;
+            case 5: // --align
                 edi_conf.tagpacket_alignment = stoi(optarg);
                 break;
-            case 5: // --no-drop-late
+            case 6: // --no-drop-late
                 edisendersettings.drop_late = false;
                 break;
             case 'm':
@@ -291,6 +305,32 @@ int Main::start(int argc, char **argv)
 
     if (edi_conf.destinations.empty() and not zmq_output_enabled) {
         etiLog.level(error) << "No destinations set";
+        return 1;
+    }
+
+    const size_t num_edi_udp = count_if(edi_conf.destinations.cbegin(), edi_conf.destinations.cend(),
+            [](const std::shared_ptr<edi::destination_t>& d) {
+                return dynamic_pointer_cast<edi::udp_destination_t>(d) != nullptr;
+            });
+
+    const size_t num_edi_tcp = count_if(edi_conf.destinations.cbegin(), edi_conf.destinations.cend(),
+            [](const std::shared_ptr<edi::destination_t>& d) {
+                return dynamic_pointer_cast<edi::tcp_server_t>(d) != nullptr;
+            });
+
+    if (num_edi_udp == 0 && num_edi_tcp == 0) {
+    }
+    else if (force_pft.has_value()) {
+        edi_conf.enable_pft = *force_pft;
+    }
+    else if (num_edi_udp > 0 && num_edi_tcp == 0) {
+        edi_conf.enable_pft = true;
+    }
+    else if (num_edi_udp == 0 && num_edi_tcp > 0) {
+        edi_conf.enable_pft = false;
+    }
+    else {
+        etiLog.level(error) << "You have both EDI/UDP and EDI/TCP outputs, please specify either --with-pft or --without-pft";
         return 1;
     }
 

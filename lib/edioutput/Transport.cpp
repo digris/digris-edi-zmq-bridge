@@ -37,6 +37,7 @@ void configuration_t::print() const
 {
     etiLog.level(info) << "EDI Output";
     etiLog.level(info) << " verbose     " << verbose;
+    etiLog.level(info) << " PFT         " << enable_pft;
     for (auto edi_dest : destinations) {
         if (auto udp_dest = dynamic_pointer_cast<edi::udp_destination_t>(edi_dest)) {
             etiLog.level(info) << " UDP to " << udp_dest->dest_addr << ":" << udp_dest->dest_port;
