@@ -77,7 +77,7 @@ static void usage()
     cerr << " -G MIS:IP:PORT As above, but only extract packets matching the IP:PORT filter\n\n";
 
     cerr << "Output settings\n";
-    cerr << " -l PORT       Listen on port PORT\n\n";
+    cerr << " -T PORT       Listen on TCP port PORT\n\n";
 
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically.\n";
 }
@@ -128,7 +128,7 @@ int main(int argc, char **argv)
     int ch = 0;
     int index = 0;
     while (ch != -1) {
-        ch = getopt_long(argc, argv, "b:F:G:l:m:p:v", longopts, &index);
+        ch = getopt_long(argc, argv, "b:F:G:T:m:p:v", longopts, &index);
         switch (ch) {
             case -1:
                 break;
@@ -144,7 +144,7 @@ int main(int argc, char **argv)
             case 'b':
                 rx_bindto = optarg;
                 break;
-            case 'l':
+            case 'T':
                 {
                     auto edi_destination = make_shared<edi::tcp_server_t>();
                     edi_destination->listen_port = stoi(optarg);
