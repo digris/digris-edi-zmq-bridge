@@ -102,7 +102,7 @@ static void usage()
     cerr << " -z <intf:port>            Set the ZMQ endpoint, e.g. *:8001 to listen on all interfaces.\n";
 
     cerr << "Debugging utilities\n";
-    cerr << " --live-stats-port <port>  Send live statistics to UDP 127.0.0.1:PORT. Receive with nc -uklp PORT\n\n";
+    cerr << " --live-stats-port <port>  Send live statistics to UDP 127.0.0.1:<port>. Receive with socat UDP4-RECV:<port> STDOUT\n\n";
 
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically." << endl;
 }
