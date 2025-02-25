@@ -62,7 +62,7 @@ void signal_handler(int signum)
 static void usage()
 {
     cerr << "\nUsage:\n";
-    cerr << "digris-edimcast2edi [options]\n\n";
+    cerr << "digris-edi-udp-converter [options]\n\n";
     cerr << "Receive EDI over multicast, remove PFT layer and make AF layer available as TCP server\n\n";
 
     cerr << " -v             Increase verbosity (Can be given more than once).\n";

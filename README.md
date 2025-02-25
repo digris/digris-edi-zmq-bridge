@@ -3,22 +3,22 @@ digris EDI/ZMQ bridge
 
 Developed for Opendigitalradio by digris: https://www.digris.ch
 
-This repository contains three useful tools for EDI distribution over ZMQ, TCP and UDP:
+This repository contains three useful tools for EDI distribution over ZMQ, EDI/TCP and EDI/UDP:
 
-* digris-edi2edi
-* digris-edimcast2edi
+* digris-edi-tcp-converter
+* digris-edi-udp-converter
 * digris-zmq-converter
 
 You can find some example usage scenarios in SCENARIOS.md
 
-DIGRIS-EDI2EDI
-==============
+DIGRIS-EDI-TCP-CONVERTER
+========================
 
 Sometimes you want to carry a DAB Ensemble using EDI over the Internet to a device that doesn't support EDI/TCP.
 Carrying EDI/UDP over the Internet will not work because of burst packet loss.
 
-With DIGRIS-EDI2EDI, you can convert EDI/TCP to EDI/UDP on a small PC that is close to your device. It also allows you
-buffer the EDI and release it at a controlled point in time depending on the in-band timestamp.
+With `digris-edi-tcp-converter`, you can convert EDI/TCP to EDI/UDP on a small PC that is close to your device.
+It also allows you buffer the EDI and release it at a controlled point in time depending on the in-band timestamp.
 
 Statistics are made available through a UNIX DGRAM Socket, which also serves as remote control interface.
 
@@ -30,13 +30,13 @@ This tool can be considered to be the successor of ODR-ZMQ2EDI which is distribu
 Remote Control
 --------------
 
-ODR-EDI2EDI contains a remote-control function that allows changing settings at runtime.
-Please see `./edi2edi_remote.py` for an example on how to use it.
+The tool contains a remote-control function that allows changing settings at runtime.
+Please see `./remote.py` for an example on how to use it.
 
 Example:
 
-    odr-edi2edi -r /tmp/edi2edi.socket <OTHER OPTIONS>
-    ./edi2edi_remote.py -s /tmp/edi2edi.socket --stats
+    digris-edi-tcp-converter -r /tmp/edi2edi.socket <OTHER OPTIONS>
+    ./remote.py -s /tmp/edi2edi.socket --stats
 
 Statistics
 ----------
@@ -67,8 +67,8 @@ Outputs:
    increasing `num_dropped` value does not mean that output frames were actually missing.
  * `late_score`: (not a counter) Score between 0 and 100 indicating how often frames are late.
 
-DIGRIS-EDIMCAST2EDI
-===================
+DIGRIS-EDI-UDP-CONVERTER
+========================
 
 This tool can receive unicast and multicast EDI/UDP, and present that to multiple listeneners over TCP.
 
@@ -78,10 +78,10 @@ MPE deframing does not expect an RTP header. Example scenario:
 
     tune-s2 12567 V 17015 -system DVB-S2 -lnb UNIVERSAL -modulation 8PSK -fec 2/3
     dvbstream -c 0 8192 -i 127.0.0.1 -r 5000 -udp
-    digris-edimcast2edi -m 127.0.0.1 -p 5000 -b 127.0.0.1 -F 101:239.16.242.17:60017 -l 8971
+    digris-edi-udp-converter -m 127.0.0.1 -p 5000 -b 127.0.0.1 -F 101:239.16.242.17:60017 -l 8971
 
 The GSE deframing has been tested with a TBS6903-X PCIe card, and `dvbstream -c 0 8192 -i 226.29.3.1 -r 5000` and
-`digris-edimcast2edi -m 226.29.3.1 -p 5000 -b 172.30.201.81 -G 1 -l 8971`. GSE deframing expects an RTP header.
+`digris-edi-udp-converter -m 226.29.3.1 -p 5000 -b 172.30.201.81 -G 1 -l 8971`. GSE deframing expects an RTP header.
 
 
 DIGRIS-ZMQ-CONVERTER

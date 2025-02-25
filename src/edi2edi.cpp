@@ -60,7 +60,7 @@ void signal_handler(int signum)
 static void usage()
 {
     cerr << "\nUsage:\n";
-    cerr << "digris-edi2edi [options] -c <source>\n\n";
+    cerr << "digris-edi-tcp-converter [options] -c <source>\n\n";
 
     cerr << "Options:\n";
     cerr << "The following options can be given only once:\n";
