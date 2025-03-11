@@ -67,6 +67,7 @@ class EDISender {
         ssize_t get_num_dlfc_discontinuities() const { return num_dlfc_discontinuities; }
         ssize_t get_frame_count() const { return num_frames; }
         size_t get_late_score() const;
+        std::vector<edi::Sender::stats_t> get_tcp_stats() const;
 
         void reset_counters();
 

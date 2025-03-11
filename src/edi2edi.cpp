@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2024
+   Copyright (C) 2025
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -21,7 +21,6 @@
    along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -793,7 +792,18 @@ string Main::handle_rc_command(const string& cmd)
             ", \"num_dropped_frames\": " << edisender.get_num_dropped() <<
             ", \"backoff_remain_ms\": " << backoff_remain <<
             ", \"in_backoff\": " << (backoff_remain > 0 ? "true" : "false") <<
-            "} }";
+            ", \"tcp_stats\": [";
+
+        const auto tcp_stats = edisender.get_tcp_stats();
+        for (auto it = tcp_stats.begin(); it != tcp_stats.end(); ++it) {
+            if (it != tcp_stats.begin()) {
+                ss << ",";
+            }
+            ss << " { \"listen_port\": " << it->listen_port <<
+                ", \"num_connections\": " << it->stats.size() << "} ";
+        }
+
+        ss << " ] } }";
 
         r = ss.str();
     }

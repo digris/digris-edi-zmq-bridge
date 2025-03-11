@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2022
+   Copyright (C) 2025
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -37,7 +37,6 @@ void configuration_t::print() const
 {
     etiLog.level(info) << "EDI Output";
     etiLog.level(info) << " verbose     " << verbose;
-    etiLog.level(info) << " PFT         " << enable_pft;
     for (auto edi_dest : destinations) {
         if (auto udp_dest = dynamic_pointer_cast<edi::udp_destination_t>(edi_dest)) {
             etiLog.level(info) << " UDP to " << udp_dest->dest_addr << ":" << udp_dest->dest_port;
@@ -219,6 +218,20 @@ void Sender::override_af_sequence(uint16_t seq)
 void Sender::override_pft_sequence(uint16_t pseq)
 {
     edi_pft.OverridePSeq(pseq);
+}
+
+std::vector<Sender::stats_t> Sender::get_tcp_server_stats() const
+{
+    std::vector<Sender::stats_t> stats;
+
+    for (auto& el : tcp_dispatchers) {
+        Sender::stats_t s;
+        s.listen_port = el.first->listen_port;
+        s.stats = el.second->get_stats();
+        stats.push_back(s);
+    }
+
+    return stats;
 }
 
 void Sender::run()

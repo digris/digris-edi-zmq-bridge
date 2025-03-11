@@ -224,6 +224,11 @@ size_t EDISender::get_late_score() const
     return late_score;
 }
 
+std::vector<edi::Sender::stats_t> EDISender::get_tcp_stats() const
+{
+    return _edi_sender->get_tcp_server_stats();
+}
+
 void EDISender::reset_counters()
 {
     num_dropped = 0;
