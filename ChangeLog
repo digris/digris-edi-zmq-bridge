@@ -1,6 +1,10 @@
 This file contains information about the changes done to
 the tools in this repository
 
+2025-03-18: Matthias P. Braendli <matthias@mpb.li>
+	(v0.8.0):
+		Add stats for EDI/TCP outputs.
+
 2025-02-26: Matthias P. Braendli <matthias@mpb.li>
 	(v0.7.0):
 		Rename binaries to more consistent names:
