@@ -9,8 +9,8 @@ compile_commands.json
 .cache
 
 libedi2edi.a
-digris-edi2edi
-digris-edimcast2edi
+digris-edi-tcp-converter
+digris-edi-udp-converter
 digris-zmq-converter
 
 aclocal.m4

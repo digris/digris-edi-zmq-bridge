@@ -117,7 +117,6 @@ int main(int argc, char **argv)
     int verbosity = 0;
 
     edi::configuration_t edi_conf;
-    edi_conf.enable_pft = false;
 
     unsigned int rx_port = 0;
     string rx_bindto = "0.0.0.0";
@@ -148,6 +147,7 @@ int main(int argc, char **argv)
                 {
                     auto edi_destination = make_shared<edi::tcp_server_t>();
                     edi_destination->listen_port = stoi(optarg);
+                    edi_destination->pft_settings.enable_pft = false;
                     edi_conf.destinations.push_back(std::move(edi_destination));
                 }
                 break;

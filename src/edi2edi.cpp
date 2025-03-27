@@ -71,7 +71,6 @@ static void usage()
     cerr << "                           This is useful for checking that NTP is properly synchronised\n";
     cerr << " -f <fec>                  Set the FEC, values 0, 1, 2, 3, 4, 5. 0 disables protection. Default 0\n";
     cerr << " -i <interleave>           Configure the interleaver with given interleave percentage: 0 send all fragments at once, 100 spread over 24ms, >100 spread and interleave. Default 95\n";
-    cerr << " -D                        Dump the EDI to edi.debug file.\n";
     cerr << " -v                        Increase verbosity (Can be given more than once).\n";
     cerr << " --align <alignement>      Set the alignment of the TAG Packet (default 8).\n";
     cerr << " -b <backoff>              Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
@@ -138,12 +137,10 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
-    optional<bool> force_pft = nullopt;
-
     int ch = 0;
     int index = 0;
     while (ch != -1) {
-        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:T:f:i:Dvb:w:x:z:h", longopts, &index);
+        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:T:f:i:vb:w:x:z:h", longopts, &index);
         switch (ch) {
             case -1:
                 break;
@@ -218,10 +215,10 @@ int Main::start(int argc, char **argv)
             case 'S':
             case 't':
             case 'p':
-                parse_destination_args(ch);
+                parse_udp_dest_args(ch);
                 break;
             case 'f':
-                edi_conf.fec = stoi(optarg);
+                pft_settings.fec = stoi(optarg);
                 break;
             case 'i':
                 {
@@ -231,12 +228,9 @@ int Main::start(int argc, char **argv)
                             throw runtime_error("EDI output: negative interleave value is invalid.");
                         }
 
-                        edi_conf.fragment_spreading_factor = (double)interleave_percent / 100.0;
+                        pft_settings.fragment_spreading_factor = (double)interleave_percent / 100.0;
                     }
                 }
-                break;
-            case 'D':
-                edi_conf.dump = true;
                 break;
             case 'v':
                 verbosity++;
@@ -251,12 +245,13 @@ int Main::start(int argc, char **argv)
                 eti_zmq_sender.open(optarg);
                 break;
             case 'T':
-                {
-                    auto dest = make_shared<edi::tcp_server_t>();
-                    dest->listen_port = stoi(optarg);
-                    etiLog.level(info) << "Add TCP dest " << dest->listen_port;
-                    edi_conf.destinations.push_back(std::move(dest));
+                if (edi_tcp_dest or edi_udp_dest) {
+                    add_edi_dest();
                 }
+
+                edi_tcp_dest = make_shared<edi::tcp_server_t>();
+
+                edi_tcp_dest->listen_port = stoi(optarg);
                 break;
             case 'h':
             default:
@@ -286,8 +281,8 @@ int Main::start(int argc, char **argv)
         }
     }
 
-    if (edi_destination) {
-        add_edi_destination();
+    if (edi_udp_dest or edi_tcp_dest) {
+        add_edi_dest();
     }
 
     if (sources.empty()) {
@@ -295,7 +290,9 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
-    size_t num_enabled = count_if(sources.cbegin(), sources.cend(), [](const source_t& src) { return src.enabled; });
+    size_t num_enabled = count_if(sources.cbegin(), sources.cend(), [](const source_t& src) {
+            return src.enabled; });
+
     if (num_enabled == 0) {
         etiLog.level(warn) << "Starting up with zero enabled sources. Did you forget to add a -c option?";
     }
@@ -304,32 +301,6 @@ int Main::start(int argc, char **argv)
 
     if (edi_conf.destinations.empty() and not zmq_output_enabled) {
         etiLog.level(error) << "No destinations set";
-        return 1;
-    }
-
-    const size_t num_edi_udp = count_if(edi_conf.destinations.cbegin(), edi_conf.destinations.cend(),
-            [](const std::shared_ptr<edi::destination_t>& d) {
-                return dynamic_pointer_cast<edi::udp_destination_t>(d) != nullptr;
-            });
-
-    const size_t num_edi_tcp = count_if(edi_conf.destinations.cbegin(), edi_conf.destinations.cend(),
-            [](const std::shared_ptr<edi::destination_t>& d) {
-                return dynamic_pointer_cast<edi::tcp_server_t>(d) != nullptr;
-            });
-
-    if (num_edi_udp == 0 && num_edi_tcp == 0) {
-    }
-    else if (force_pft.has_value()) {
-        edi_conf.enable_pft = *force_pft;
-    }
-    else if (num_edi_udp > 0 && num_edi_tcp == 0) {
-        edi_conf.enable_pft = true;
-    }
-    else if (num_edi_udp == 0 && num_edi_tcp > 0) {
-        edi_conf.enable_pft = false;
-    }
-    else {
-        etiLog.level(error) << "You have both EDI/UDP and EDI/TCP outputs, please specify either --with-pft or --without-pft";
         return 1;
     }
 
@@ -535,65 +506,97 @@ void Main::ensure_one_active()
     }
 }
 
-void Main::add_edi_destination()
+void Main::add_edi_dest()
 {
-    if (not dest_addr_set) {
-        throw runtime_error("Destination address not specified for destination number " +
-                to_string(edi_conf.destinations.size() + 1));
+    if (edi_tcp_dest) {
+        edi_tcp_dest->pft_settings = pft_settings;
+        if (force_pft.has_value()) {
+            edi_tcp_dest->pft_settings.enable_pft = *force_pft;
+        }
+        else {
+            edi_tcp_dest->pft_settings.enable_pft = false;
+        }
+
+        edi_conf.destinations.push_back(std::move(edi_tcp_dest));
+        edi_tcp_dest.reset();
+
+        pft_settings = {};
+        force_pft.reset();
     }
 
-    edi_conf.destinations.push_back(std::move(edi_destination));
-    edi_destination = make_shared<edi::udp_destination_t>();
+    if (edi_udp_dest) {
+        if (not dest_addr_set) {
+            throw runtime_error("Destination address not specified for destination number " +
+                    to_string(edi_conf.destinations.size() + 1));
+        }
 
-    source_port_set = false;
-    source_addr_set = false;
-    ttl_set = false;
-    dest_addr_set = false;
-    dest_port_set = false;
+        edi_udp_dest->pft_settings = pft_settings;
+        if (force_pft.has_value()) {
+            edi_udp_dest->pft_settings.enable_pft = *force_pft;
+        }
+        else {
+            edi_udp_dest->pft_settings.enable_pft = true;
+        }
+
+        edi_conf.destinations.push_back(std::move(edi_udp_dest));
+        edi_udp_dest.reset();
+
+        pft_settings = {};
+        force_pft.reset();
+        source_port_set = false;
+        source_addr_set = false;
+        ttl_set = false;
+        dest_addr_set = false;
+        dest_port_set = false;
+    }
 }
 
 /* There is some state inside the parsing of destination arguments,
- * because several destinations can be given.  */
-void Main::parse_destination_args(char option)
+ * because several destinations can be given. */
+void Main::parse_udp_dest_args(char option)
 {
-    if (not edi_destination) {
-        edi_destination = make_shared<edi::udp_destination_t>();
+    if (edi_tcp_dest) {
+        add_edi_dest();
+    }
+
+    if (not edi_udp_dest) {
+        edi_udp_dest = make_shared<edi::udp_destination_t>();
     }
 
     switch (option) {
         case 'p':
             if (dest_port_set) {
-                add_edi_destination();
+                add_edi_dest();
             }
-            edi_destination->dest_port = stoi(optarg);
+            edi_udp_dest->dest_port = stoi(optarg);
             dest_port_set = true;
             break;
         case 's':
             if (source_port_set) {
-                add_edi_destination();
+                add_edi_dest();
             }
-            edi_destination->source_port = stoi(optarg);
+            edi_udp_dest->source_port = stoi(optarg);
             source_port_set = true;
             break;
         case 'S':
             if (source_addr_set) {
-                add_edi_destination();
+                add_edi_dest();
             }
-            edi_destination->source_addr = optarg;
+            edi_udp_dest->source_addr = optarg;
             source_addr_set = true;
             break;
         case 't':
             if (ttl_set) {
-                add_edi_destination();
+                add_edi_dest();
             }
-            edi_destination->ttl = stoi(optarg);
+            edi_udp_dest->ttl = stoi(optarg);
             ttl_set = true;
             break;
         case 'd':
             if (dest_addr_set) {
-                add_edi_destination();
+                add_edi_dest();
             }
-            edi_destination->dest_addr = optarg;
+            edi_udp_dest->dest_addr = optarg;
             dest_addr_set = true;
             break;
         default:

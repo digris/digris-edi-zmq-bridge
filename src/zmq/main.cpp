@@ -3,7 +3,7 @@
    2011, 2012 Her Majesty the Queen in Right of Canada (Communications
    Research Center Canada)
 
-   Copyright (C) 2024
+   Copyright (C) 2025
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -30,7 +30,6 @@
 #include <cstring>
 #include <chrono>
 #include <iostream>
-#include <iterator>
 #include <thread>
 #include <vector>
 
@@ -73,7 +72,6 @@ static void usage()
     cerr << " -P                    Disable PFT and send AFPackets." << endl;
     cerr << " -f <fec>              Set the FEC." << endl;
     cerr << " -i <spread>           Configure the UDP packet spread/interleaver with given percentage: 0% send all fragments at once, 100% spread over 24ms, >100% spread and interleave. Default 95%\n";
-    cerr << " -D                    Dump the EDI to edi.debug file." << endl;
     cerr << " -a <alignement>       Set the alignment of the TAG Packet (default 8)." << endl;
 
     cerr << "The following options can be given several times, when more than EDI/UDP destination is desired:" << endl;
@@ -174,6 +172,8 @@ static bool source_port_set = false;
 static bool source_addr_set = false;
 static bool ttl_set = false;
 static bool dest_addr_set = false;
+static edi::pft_settings_t pft_settings = {};
+static std::optional<bool> force_pft = std::nullopt;
 
 static void add_edi_destination(void)
 {
@@ -181,6 +181,16 @@ static void add_edi_destination(void)
         throw std::runtime_error("Destination address not specified for destination number " +
                 std::to_string(edi_conf.destinations.size() + 1));
     }
+
+    edi_destination->pft_settings = pft_settings;
+    if (force_pft.has_value()) {
+        edi_destination->pft_settings.enable_pft = *force_pft;
+    }
+    else {
+        edi_destination->pft_settings.enable_pft = true;
+    }
+    pft_settings = {};
+    force_pft = std::nullopt;
 
     edi_conf.destinations.push_back(std::move(edi_destination));
     edi_destination = std::make_shared<edi::udp_destination_t>();
@@ -243,8 +253,6 @@ class FCTDiscontinuity { };
 
 int start(int argc, char **argv)
 {
-    edi_conf.enable_pft = true;
-
     if (argc == 0) {
         usage();
         return 1;
@@ -259,7 +267,7 @@ int start(int argc, char **argv)
 
     int ch = 0;
     while (ch != -1) {
-        ch = getopt(argc, argv, "C:d:p:s:S:t:Pf:i:Dva:b:w:xhZ:");
+        ch = getopt(argc, argv, "C:d:p:s:S:t:Pf:i:va:b:w:xhZ:");
         switch (ch) {
             case -1:
                 break;
@@ -274,10 +282,10 @@ int start(int argc, char **argv)
                 parse_destination_args(ch);
                 break;
             case 'P':
-                edi_conf.enable_pft = false;
+                pft_settings.enable_pft = false;
                 break;
             case 'f':
-                edi_conf.fec = std::stoi(optarg);
+                pft_settings.fec = std::stoi(optarg);
                 break;
             case 'i':
                 {
@@ -286,14 +294,11 @@ int start(int argc, char **argv)
                         throw std::runtime_error("EDI output: negative spread value is invalid.");
                     }
 
-                    edi_conf.fragment_spreading_factor = (double)spread_percent / 100.0;
-                    if (edi_conf.fragment_spreading_factor > 30000) {
+                    pft_settings.fragment_spreading_factor = (double)spread_percent / 100.0;
+                    if (pft_settings.fragment_spreading_factor > 30000) {
                         throw std::runtime_error("EDI output: interleaving set for more than 30 seconds!");
                     }
                 }
-                break;
-            case 'D':
-                edi_conf.dump = true;
                 break;
             case 'v':
                 edi_conf.verbose = true;
