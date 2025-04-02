@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2024
+   Copyright (C) 2025
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -23,10 +23,7 @@
 
 #pragma once
 #include <chrono>
-#include <iostream>
-#include <iterator>
 #include <memory>
-#include <thread>
 #include <vector>
 #include <cmath>
 #include <cstring>
@@ -46,7 +43,9 @@ struct tagpacket_t {
 };
 
 struct source_t {
-    source_t(std::string hostname, int port, bool enabled) : hostname(hostname), port(port), enabled(enabled) {}
+    source_t(std::string hostname, int port, bool enabled) :
+        hostname(hostname), port(port), enabled(enabled) {}
+
     void reset_counters() { num_connects = 0; }
 
     std::string hostname;

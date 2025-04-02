@@ -29,6 +29,7 @@
 #include "receiver.h"
 #include "EDISender.h"
 #include "zmq/edi2zmq.hpp"
+#include "webserver.h"
 
 constexpr long DEFAULT_SWITCH_DELAY = 2000;
 
@@ -47,6 +48,7 @@ class Main {
         void init_rc();
         bool handle_rc_request();
         std::string handle_rc_command(const std::string& cmd);
+        std::string build_stats_json();
 
         std::shared_ptr<edi::udp_destination_t> edi_udp_dest;
         edi::pft_settings_t pft_settings = {};
@@ -71,9 +73,11 @@ class Main {
         std::string rc_socket_name = "";
         int rc_socket = -1;
 
-        std::chrono::steady_clock::duration switch_delay = std::chrono::milliseconds(DEFAULT_SWITCH_DELAY);
+        std::chrono::steady_clock::duration switch_delay =
+            std::chrono::milliseconds(DEFAULT_SWITCH_DELAY);
 
-        const std::chrono::steady_clock::time_point startup_time = std::chrono::steady_clock::now();
+        const std::chrono::steady_clock::time_point startup_time =
+            std::chrono::steady_clock::now();
 
         enum class Mode {
             Switching,
@@ -83,4 +87,8 @@ class Main {
         Mode mode = Mode::Merging;
 
         uint64_t num_poll_timeout = 0;
+
+        std::optional<WebServer> webserver;
+        std::chrono::steady_clock::time_point last_stats_update_time =
+            std::chrono::steady_clock::now();
 };

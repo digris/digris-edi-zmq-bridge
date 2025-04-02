@@ -73,6 +73,7 @@ static void usage()
     cerr << " --align <alignement>      Set the alignment of the TAG Packet (default 8).\n";
     cerr << " -b <backoff>              Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
     cerr << " -r <socket_path>          Enable UNIX DGRAM remote control socket and bind to given path\n";
+    cerr << " --http <IP:PORT>          Enable HTTP Server listening on given IP:PORT\n";
     cerr << " --version                 Show the version and quit.\n\n";
 
     cerr << "The following options can be given several times:\n";
@@ -106,6 +107,7 @@ static void usage()
 static const struct option longopts[] = {
     {"switch-delay", required_argument, 0, 1},
     {"live-stats-port", required_argument, 0, 2},
+    {"http", required_argument, 0, 3},
     {"align", required_argument, 0, 5},
     {"no-drop-late", no_argument, 0, 6},
     {0, 0, 0, 0}
@@ -146,6 +148,27 @@ int Main::start(int argc, char **argv)
             case 2: // --live-stats-port
                 edisendersettings.live_stats_port = stoi(optarg);
                 break;
+            case 3: // --http
+                {
+                    stringstream all_args;
+                    for (int i = 0; i < argc; i++) {
+                        if (i > 0) all_args << " ";
+                        all_args << argv[i];
+                    }
+
+                    string optarg_s = optarg;
+                    const auto pos_colon = optarg_s.find(":");
+                    if (pos_colon == string::npos or pos_colon == 0) {
+                        etiLog.level(error) << "--http argument does not contain host:port";
+                        return 1;
+                    }
+
+                    webserver.emplace(
+                            optarg_s.substr(0, pos_colon),
+                            stoi(optarg_s.substr(pos_colon+1)),
+                            all_args.str());
+                }
+                break;
             case 5: // --align
                 edi_conf.tagpacket_alignment = stoi(optarg);
                 break;
@@ -175,11 +198,11 @@ int Main::start(int argc, char **argv)
                     }
 
                     try {
-                    const bool enabled = ch == 'c';
-                    sources.push_back({
-                            optarg_s.substr(0, pos_colon),
-                            stoi(optarg_s.substr(pos_colon+1)),
-                            enabled});
+                        const bool enabled = ch == 'c';
+                        sources.push_back({
+                                optarg_s.substr(0, pos_colon),
+                                stoi(optarg_s.substr(pos_colon+1)),
+                                enabled});
                     }
                     catch (logic_error& e) {
                         throw runtime_error(string{"The -c or -F option "} + optarg_s + " is not valid");
@@ -459,6 +482,13 @@ int Main::start(int argc, char **argv)
             else {
                 num_poll_timeout += POLL_TIMEOUT_FRAMES;
             }
+
+            if (webserver.has_value()) {
+                using namespace std::chrono;
+                if (last_stats_update_time + seconds(1) < steady_clock::now()) {
+                    webserver->update_stats_json(build_stats_json());
+                }
+            }
         } while (running);
     }
     catch (const runtime_error& e) {
@@ -649,6 +679,93 @@ bool Main::handle_rc_request()
     }
 }
 
+std::string Main::build_stats_json()
+{
+    using namespace chrono;
+    stringstream ss;
+    ss << "{ \"inputs\": [\n";
+    for (auto it = receivers.begin(); it != receivers.end();) {
+
+        const auto rx_packet_time = timepoint_to_string(it->get_systime_last_packet());
+
+        ss << "{" <<
+            " \"hostname\": \"" << it->source.hostname << "\"" <<
+            ", \"port\": " << it->source.port <<
+            ", \"last_packet_received_at\": \"" << rx_packet_time << "\"" <<
+            ", \"connection_uptime\": " << it->connection_uptime_ms() <<
+            ", \"connected\": " << (it->source.connected ? "true" : "false") <<
+            ", \"active\": " << (it->source.active ? "true" : "false") <<
+            ", \"enabled\": " << (it->source.enabled ? "true" : "false");
+
+        const auto most_recent_connect_error = it->get_last_connection_error();
+        const auto err_time = timepoint_to_string(most_recent_connect_error.timestamp);
+
+        const auto margin_stats = it->get_margin_stats();
+
+        ss << ", \"stats\": {" <<
+            " \"margin\": {" << std::fixed <<
+            "   \"mean\": " << margin_stats.mean <<
+            ",  \"min\": " << margin_stats.min <<
+            ",  \"max\": " << margin_stats.max;
+
+        if (edisendersettings.delay_ms.has_value()) {
+            ss << ",  \"mean_to_delivery\": " << margin_stats.mean + *edisendersettings.delay_ms <<
+                ",  \"min_to_delivery\": " << margin_stats.min + *edisendersettings.delay_ms <<
+                ",  \"max_to_delivery\": " << margin_stats.max + *edisendersettings.delay_ms;
+        }
+        else {
+            ss << ", \"mean_to_delivery\": null, \"min_to_delivery\": null, \"max_to_delivery\": null";
+        }
+
+        ss << ",  \"stdev\": " << margin_stats.stdev <<
+            ",  \"num_measurements\": " << margin_stats.num_measurements <<
+            "}, \"num_late_frames\": " << it->num_late <<
+            ", \"num_connects\": " << it->source.num_connects <<
+            ", \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) <<
+            ", \"most_recent_connect_error_timestamp\": \"" << err_time << "\"" <<
+            " } }";
+
+        ++it;
+        if (it == receivers.end()) {
+            ss << "\n";
+        }
+        else {
+            ss << ",\n";
+        }
+    }
+    ss << "],\n";
+
+    ss << " \"main\": {" <<
+        "\"poll_timeouts\": " << num_poll_timeout <<
+        ", \"process_uptime\": " <<
+        duration_cast<milliseconds>(steady_clock::now() - startup_time).count() <<
+        " },";
+
+    const auto backoff_remain = edisender.backoff_milliseconds_remaining();
+
+    ss << " \"output\": {"
+        " \"num_frames\": " << edisender.get_frame_count() <<
+        ", \"late_score\": " << edisender.get_late_score() <<
+        ", \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() <<
+        ", \"num_queue_overruns\": " << edisender.get_num_queue_overruns() <<
+        ", \"num_dropped_frames\": " << edisender.get_num_dropped() <<
+        ", \"backoff_remain_ms\": " << backoff_remain <<
+        ", \"in_backoff\": " << (backoff_remain > 0 ? "true" : "false") <<
+        ", \"tcp_stats\": [";
+
+    const auto tcp_stats = edisender.get_tcp_stats();
+    for (auto it = tcp_stats.begin(); it != tcp_stats.end(); ++it) {
+        if (it != tcp_stats.begin()) {
+            ss << ",";
+        }
+        ss << " { \"listen_port\": " << it->listen_port <<
+            ", \"num_connections\": " << it->stats.size() << "} ";
+    }
+
+    ss << " ] } }";
+    return ss.str();
+}
+
 string Main::handle_rc_command(const string& cmd)
 {
     using namespace chrono;
@@ -679,89 +796,7 @@ string Main::handle_rc_command(const string& cmd)
         r = ss.str();
     }
     else if (cmd.rfind("stats", 0) == 0) {
-        stringstream ss;
-        ss << "{ \"inputs\": [\n";
-        for (auto it = receivers.begin(); it != receivers.end();) {
-
-            const auto rx_packet_time = timepoint_to_string(it->get_systime_last_packet());
-
-            ss << "{" <<
-                  " \"hostname\": \"" << it->source.hostname << "\"" <<
-                  ", \"port\": " << it->source.port <<
-                  ", \"last_packet_received_at\": \"" << rx_packet_time << "\"" <<
-                  ", \"connection_uptime\": " << it->connection_uptime_ms() <<
-                  ", \"connected\": " << (it->source.connected ? "true" : "false") <<
-                  ", \"active\": " << (it->source.active ? "true" : "false") <<
-                  ", \"enabled\": " << (it->source.enabled ? "true" : "false");
-
-            const auto most_recent_connect_error = it->get_last_connection_error();
-            const auto err_time = timepoint_to_string(most_recent_connect_error.timestamp);
-
-            const auto margin_stats = it->get_margin_stats();
-
-            ss << ", \"stats\": {" <<
-                  " \"margin\": {" << std::fixed <<
-                  "   \"mean\": " << margin_stats.mean <<
-                  ",  \"min\": " << margin_stats.min <<
-                  ",  \"max\": " << margin_stats.max;
-
-            if (edisendersettings.delay_ms.has_value()) {
-                ss << ",  \"mean_to_delivery\": " << margin_stats.mean + *edisendersettings.delay_ms <<
-                    ",  \"min_to_delivery\": " << margin_stats.min + *edisendersettings.delay_ms <<
-                    ",  \"max_to_delivery\": " << margin_stats.max + *edisendersettings.delay_ms;
-            }
-            else {
-                ss << ", \"mean_to_delivery\": null, \"min_to_delivery\": null, \"max_to_delivery\": null";
-            }
-
-            ss << ",  \"stdev\": " << margin_stats.stdev <<
-                  ",  \"num_measurements\": " << margin_stats.num_measurements <<
-                  "}, \"num_late_frames\": " << it->num_late <<
-                  ", \"num_connects\": " << it->source.num_connects <<
-                  ", \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) <<
-                  ", \"most_recent_connect_error_timestamp\": \"" << err_time << "\"" <<
-                  " } }";
-
-            ++it;
-            if (it == receivers.end()) {
-                ss << "\n";
-            }
-            else {
-                ss << ",\n";
-            }
-        }
-        ss << "],\n";
-
-        ss << " \"main\": {" <<
-            "\"poll_timeouts\": " << num_poll_timeout <<
-            ", \"process_uptime\": " <<
-                duration_cast<milliseconds>(steady_clock::now() - startup_time).count() <<
-            " },";
-
-        const auto backoff_remain = edisender.backoff_milliseconds_remaining();
-
-        ss << " \"output\": {"
-            " \"num_frames\": " << edisender.get_frame_count() <<
-            ", \"late_score\": " << edisender.get_late_score() <<
-            ", \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() <<
-            ", \"num_queue_overruns\": " << edisender.get_num_queue_overruns() <<
-            ", \"num_dropped_frames\": " << edisender.get_num_dropped() <<
-            ", \"backoff_remain_ms\": " << backoff_remain <<
-            ", \"in_backoff\": " << (backoff_remain > 0 ? "true" : "false") <<
-            ", \"tcp_stats\": [";
-
-        const auto tcp_stats = edisender.get_tcp_stats();
-        for (auto it = tcp_stats.begin(); it != tcp_stats.end(); ++it) {
-            if (it != tcp_stats.begin()) {
-                ss << ",";
-            }
-            ss << " { \"listen_port\": " << it->listen_port <<
-                ", \"num_connections\": " << it->stats.size() << "} ";
-        }
-
-        ss << " ] } }";
-
-        r = ss.str();
+        r = build_stats_json();
     }
     else if (cmd.rfind("set input enable ", 0) == 0) {
         auto input = cmd.substr(17, cmd.size());

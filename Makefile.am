@@ -14,7 +14,8 @@ INCLUDE=-Ilib -Isrc
 digris_edi_tcp_converter_CFLAGS   = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
 digris_edi_tcp_converter_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)
 digris_edi_tcp_converter_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS) $(ZMQ_LIBS)
-digris_edi_tcp_converter_SOURCES  = src/edi2edi.h src/edi2edi.cpp
+digris_edi_tcp_converter_SOURCES  = src/edi2edi.h src/edi2edi.cpp \
+									src/webserver.h src/webserver.cpp
 
 digris_edi_udp_converter_CFLAGS   = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
 digris_edi_udp_converter_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
