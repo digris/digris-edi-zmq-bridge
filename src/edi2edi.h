@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2024
+   Copyright (C) 2025
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -41,7 +41,7 @@ class Main {
     private:
         void ensure_one_active();
 
-        void add_edi_dest();
+        void add_udp_edi_dest();
         void parse_udp_dest_args(char option);
 
         void init_rc();
@@ -49,9 +49,7 @@ class Main {
         std::string handle_rc_command(const std::string& cmd);
 
         std::shared_ptr<edi::udp_destination_t> edi_udp_dest;
-        std::shared_ptr<edi::tcp_server_t> edi_tcp_dest;
         edi::pft_settings_t pft_settings = {};
-        std::optional<bool> force_pft = std::nullopt;
         bool source_port_set = false;
         bool source_addr_set = false;
         bool ttl_set = false;
