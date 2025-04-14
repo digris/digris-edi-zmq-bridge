@@ -199,7 +199,6 @@ static http_request_t parse_http_headers(Socket::TCPSocket& s) {
     const auto request_type = split(first_line);
 
     if (request_type.size() != 3) {
-        etiLog.level(warn) << "Malformed request: " << first_line ;
         return r;
     }
     else if (request_type[0] == "GET") {
@@ -229,10 +228,10 @@ static http_request_t parse_http_headers(Socket::TCPSocket& s) {
     }
 
     if (r.is_post) {
-        constexpr auto CL = "Content-Length";
-        if (r.headers.count(CL) == 1) {
+        constexpr auto CONTENT_LENGTH = "Content-Length";
+        if (r.headers.count(CONTENT_LENGTH) == 1) {
             try {
-                const int content_length = stoi(r.headers[CL]);
+                const int content_length = stoi(r.headers[CONTENT_LENGTH]);
                 if (content_length > 1024 * 1024) {
                     etiLog.level(warn) << "Unreasonable POST Content-Length: " << content_length;
                     return r;
@@ -242,11 +241,11 @@ static http_request_t parse_http_headers(Socket::TCPSocket& s) {
                 r.post_data = string(buf.begin(), buf.end());
             }
             catch (const invalid_argument&) {
-                etiLog.level(warn) << "Cannot parse POST Content-Length: " << r.headers[CL];
+                etiLog.level(warn) << "Cannot parse POST Content-Length: " << r.headers[CONTENT_LENGTH];
                 return r;
             }
             catch (const out_of_range&) {
-                etiLog.level(warn) << "Cannot represent POST Content-Length: " << r.headers[CL];
+                etiLog.level(warn) << "Cannot represent POST Content-Length: " << r.headers[CONTENT_LENGTH];
                 return r;
             }
         }
