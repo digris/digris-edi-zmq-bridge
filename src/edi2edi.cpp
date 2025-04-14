@@ -486,7 +486,7 @@ int Main::start(int argc, char **argv)
             if (webserver.has_value()) {
                 using namespace std::chrono;
                 if (last_stats_update_time + seconds(1) < steady_clock::now()) {
-                    webserver->update_stats_json(build_stats_json());
+                    webserver->update_stats_json(build_stats_json(true));
                 }
             }
         } while (running);
@@ -679,7 +679,7 @@ bool Main::handle_rc_request()
     }
 }
 
-std::string Main::build_stats_json()
+std::string Main::build_stats_json(bool include_settings)
 {
     using namespace chrono;
     stringstream ss;
@@ -762,7 +762,31 @@ std::string Main::build_stats_json()
             ", \"num_connections\": " << it->stats.size() << "} ";
     }
 
-    ss << " ] } }";
+    ss << " ] } ";
+
+    if (include_settings) {
+        ss << ", \"settings\": { \"delay\": ";
+        if (edisendersettings.delay_ms.has_value()) {
+            ss << *edisendersettings.delay_ms;
+        }
+        else {
+            ss << "null";
+        }
+        ss <<
+            ", \"backoff\": " << duration_cast<milliseconds>(edisendersettings.backoff).count() <<
+            ", \"live_stats_port\": " << edisendersettings.live_stats_port <<
+            ", \"verbosity\": " << verbosity <<
+            ", \"mode\": \"";
+
+        switch (mode) {
+            case Mode::Switching: ss << "switching"; break;
+            case Mode::Merging: ss << "merging"; break;
+        }
+
+        ss << "\" }";
+    }
+
+    ss << " }";
     return ss.str();
 }
 
@@ -796,7 +820,7 @@ string Main::handle_rc_command(const string& cmd)
         r = ss.str();
     }
     else if (cmd.rfind("stats", 0) == 0) {
-        r = build_stats_json();
+        r = build_stats_json(false);
     }
     else if (cmd.rfind("set input enable ", 0) == 0) {
         auto input = cmd.substr(17, cmd.size());

@@ -48,7 +48,7 @@ class Main {
         void init_rc();
         bool handle_rc_request();
         std::string handle_rc_command(const std::string& cmd);
-        std::string build_stats_json();
+        std::string build_stats_json(bool include_settings);
 
         std::shared_ptr<edi::udp_destination_t> edi_udp_dest;
         edi::pft_settings_t pft_settings = {};

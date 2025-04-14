@@ -260,7 +260,7 @@ void Sender::process()
         }
         else {
             etiLog.level(warn) << "Ignoring short ETI frame, "
-                "DFLC=" << frame.metadata.dlfc << ", len=" <<
+                "DLFC=" << frame.metadata.dlfc << ", len=" <<
                 frame.data.size();
         }
 
