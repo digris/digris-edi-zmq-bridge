@@ -23,6 +23,7 @@ digris_edi_udp_converter_LDADD    = -lpthread libedi2edi.a $(LIBATOMIC_LIBS)
 digris_edi_udp_converter_SOURCES  = src/edi_udp_converter.cpp \
 									src/mpe_deframer.hpp src/mpe_deframer.cpp \
 									src/gse_deframer.hpp src/gse_deframer.cpp \
+									src/webserver.h src/webserver.cpp \
 									src/EDIReceiver.hpp src/EDIReceiver.cpp
 
 digris_zmq_converter_CFLAGS   = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(ZMQ_CPPFLAGS) $(GITVERSION_FLAGS)

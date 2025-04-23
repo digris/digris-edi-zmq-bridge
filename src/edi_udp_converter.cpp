@@ -274,7 +274,7 @@ int main(int argc, char **argv)
             if (webserver.has_value()) {
                 using namespace std::chrono;
                 if (last_stats_update_time + seconds(1) < steady_clock::now()) {
-                    webserver->update_stats_json(build_stats_json(true));
+                    //TODO webserver->update_stats_json(build_stats_json(true));
                 }
             }
         }
