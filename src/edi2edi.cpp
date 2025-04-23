@@ -486,6 +486,7 @@ int Main::start(int argc, char **argv)
             if (webserver.has_value()) {
                 using namespace std::chrono;
                 if (last_stats_update_time + seconds(1) < steady_clock::now()) {
+                    last_stats_update_time += seconds(1);
                     webserver->update_stats_json(build_stats_json(true));
                 }
             }

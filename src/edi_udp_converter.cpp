@@ -41,6 +41,7 @@
 #include "mpe_deframer.hpp"
 #include "gse_deframer.hpp"
 #include "common.h"
+#include "webserver.h"
 
 using namespace std;
 
@@ -83,7 +84,7 @@ static void usage()
 }
 
 static const struct option longopts[] = {
-    //{"live-stats-port", required_argument, 0, 2},
+    {"http", required_argument, 0, 2},
     {0, 0, 0, 0}
 };
 
@@ -122,6 +123,10 @@ int main(int argc, char **argv)
     string rx_bindto = "0.0.0.0";
     string rx_mcastaddr;
 
+    std::chrono::steady_clock::time_point last_stats_update_time =
+        std::chrono::steady_clock::now();
+    std::optional<WebServer> webserver;
+
     std::variant<std::monostate, MPEDeframer, GSEDeframer> deframer;
 
     int ch = 0;
@@ -131,8 +136,26 @@ int main(int argc, char **argv)
         switch (ch) {
             case -1:
                 break;
-            case 2: // --live-stats-port
-                //int live_stats_port = stoi(optarg);
+            case 2: // --http
+                {
+                    stringstream all_args;
+                    for (int i = 0; i < argc; i++) {
+                        if (i > 0) all_args << " ";
+                        all_args << argv[i];
+                    }
+
+                    string optarg_s = optarg;
+                    const auto pos_colon = optarg_s.find(":");
+                    if (pos_colon == string::npos or pos_colon == 0) {
+                        etiLog.level(error) << "--http argument does not contain host:port";
+                        return 1;
+                    }
+
+                    webserver.emplace(
+                            optarg_s.substr(0, pos_colon),
+                            stoi(optarg_s.substr(pos_colon+1)),
+                            all_args.str());
+                }
                 break;
             case 'F':
                 deframer = MPEDeframer(optarg);
@@ -245,6 +268,13 @@ int main(int argc, char **argv)
                     p.buf = std::move(rp.packetdata);
                     p.received_on_port = rp.port_received_on;
                     edi_rx.push_packet(p);
+                }
+            }
+
+            if (webserver.has_value()) {
+                using namespace std::chrono;
+                if (last_stats_update_time + seconds(1) < steady_clock::now()) {
+                    webserver->update_stats_json(build_stats_json(true));
                 }
             }
         }
