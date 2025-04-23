@@ -503,8 +503,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    std::cerr << "digris-zmq-converter from " <<
-        PACKAGE_NAME << " " <<
+    std::cerr << "DIGRIS-ZMQ-CONVERTER " <<
 #if defined(GITVERSION)
         GITVERSION <<
 #else

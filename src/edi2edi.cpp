@@ -46,7 +46,7 @@ using namespace std;
 
 volatile sig_atomic_t running = 1;
 
-void signal_handler(int signum)
+static void signal_handler(int signum)
 {
     if (signum == SIGTERM) {
         fprintf(stderr, "Received SIGTERM\n");
@@ -936,7 +936,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    cerr << "DIGRIS-EDI2EDI " <<
+    cerr << "DIGRIS-EDI-TCP-CONVERTER " <<
 #if defined(GITVERSION)
         GITVERSION <<
 #else

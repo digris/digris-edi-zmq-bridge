@@ -33,8 +33,6 @@
 
 constexpr long DEFAULT_SWITCH_DELAY = 2000;
 
-void signal_handler(int signum);
-
 class Main {
     public:
         int start(int argc, char **argv);

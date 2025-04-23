@@ -77,6 +77,14 @@ public:
 
     std::vector<std::vector<uint8_t> > get_deframed_packets();
 
+    struct conf_t {
+        uint32_t pid = 0;
+        uint16_t port = 0;
+        uint32_t ip = 0;
+    };
+
+    conf_t get_configuration() const { return m_conf; }
+
 private:
     void process_ts(const uint8_t *ts);
     void extract_edi();
@@ -84,9 +92,6 @@ private:
     std::vector<std::vector<uint8_t> > m_extracted_frames;
 
     mpegts_psi_t m_psi;
-    uint32_t m_pid = 0;
-
-    uint16_t m_port = 0;
-    uint32_t m_ip = 0;
+    conf_t m_conf;
     bool m_debug = false;
 };

@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2024
+   Copyright (C) 2025
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -35,19 +35,20 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+#include "edi_udp_converter.h"
 #include "Log.h"
 #include "edioutput/Transport.h"
 #include "EDIReceiver.hpp"
 #include "mpe_deframer.hpp"
 #include "gse_deframer.hpp"
 #include "common.h"
-#include "webserver.h"
 
 using namespace std;
 
 volatile sig_atomic_t running = 1;
 
-void signal_handler(int signum)
+static void signal_handler(int signum)
 {
     if (signum == SIGTERM) {
         fprintf(stderr, "Received SIGTERM\n");
@@ -66,16 +67,17 @@ static void usage()
     cerr << "digris-edi-udp-converter [options]\n\n";
     cerr << "Receive EDI over multicast, remove PFT layer and make AF layer available as TCP server\n\n";
 
-    cerr << " -v             Increase verbosity (Can be given more than once).\n";
-    cerr << " --version      Print the version and quit.\n\n";
+    cerr << " -v               Increase verbosity (Can be given more than once).\n";
+    cerr << " --version        Print the version and quit.\n\n";
+    cerr << " --http <IP:PORT> Enable HTTP Server listening on given IP:PORT\n";
 
     cerr << "Input settings\n";
-    cerr << " -p PORT        Receive UDP on PORT\n";
-    cerr << " -b BINDTO      Bind receive socket to BINDTO address\n";
-    cerr << " -m ADDRESS     Receive from multicast ADDRESS\n";
-    cerr << " -F PID:IP:PORT Decode MPE like fedi2eti\n";
-    cerr << " -G MIS         Decode GSE like pts2bbf|bbfedi2eti, with additional RTP deframing beforehand\n\n";
-    cerr << " -G MIS:IP:PORT As above, but only extract packets matching the IP:PORT filter\n\n";
+    cerr << " -p PORT          Receive UDP on PORT\n";
+    cerr << " -b BINDTO        Bind receive socket to BINDTO address\n";
+    cerr << " -m ADDRESS       Receive from multicast ADDRESS\n";
+    cerr << " -F PID:IP:PORT   Decode MPE like fedi2eti\n";
+    cerr << " -G MIS           Decode GSE like pts2bbf|bbfedi2eti, with additional RTP deframing beforehand\n\n";
+    cerr << " -G MIS:IP:PORT   As above, but only extract packets matching the IP:PORT filter\n\n";
 
     cerr << "Output settings\n";
     cerr << " -T PORT       Listen on TCP port PORT\n\n";
@@ -87,6 +89,39 @@ static const struct option longopts[] = {
     {"http", required_argument, 0, 2},
     {0, 0, 0, 0}
 };
+
+std::string Main::build_stats_json(
+                EdiDecoder::EDIReceiver& rx,
+                const edi::Sender& edisender)
+{
+    using namespace chrono;
+    stringstream ss;
+    ss << "{ \"inputs\": [\n {" <<
+            " \"num_frames\": " << rx.num_frames.load() <<
+            " }\n],\n";
+
+    ss << " \"main\": {" <<
+        " \"process_uptime\": " <<
+        duration_cast<milliseconds>(steady_clock::now() - startup_time).count() <<
+        " },";
+
+    ss << " \"output\": {"
+        " \"tcp_stats\": [";
+
+    const auto tcp_stats = edisender.get_tcp_server_stats();
+    for (auto it = tcp_stats.begin(); it != tcp_stats.end(); ++it) {
+        if (it != tcp_stats.begin()) {
+            ss << ",";
+        }
+        ss << " { \"listen_port\": " << it->listen_port <<
+            ", \"num_connections\": " << it->stats.size() << "} ";
+    }
+
+    ss << " ] } ";
+
+    ss << " }";
+    return ss.str();
+}
 
 int main(int argc, char **argv)
 {
@@ -102,7 +137,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    cerr << "DIGRIS-EDIMCAST2EDI " <<
+    cerr << "DIGRIS-EDI-UDP-CONVERTER " <<
 #if defined(GITVERSION)
         GITVERSION <<
 #else
@@ -115,20 +150,38 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    int verbosity = 0;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(struct sigaction));
+    sa.sa_handler = &signal_handler;
 
-    edi::configuration_t edi_conf;
+    const int sigs[] = {SIGHUP, SIGQUIT, SIGINT, SIGTERM};
+    for (int sig : sigs) {
+        if (sigaction(sig, &sa, nullptr) == -1) {
+            perror("sigaction");
+            return EXIT_FAILURE;
+        }
+    }
 
-    unsigned int rx_port = 0;
-    string rx_bindto = "0.0.0.0";
-    string rx_mcastaddr;
+    int ret = 1;
+    try {
+        Main m;
+        ret = m.start(argc, argv);
 
-    std::chrono::steady_clock::time_point last_stats_update_time =
-        std::chrono::steady_clock::now();
-    std::optional<WebServer> webserver;
+        // To make sure things get printed to stderr
+        this_thread::sleep_for(chrono::milliseconds(300));
+    }
+    catch (const runtime_error &e) {
+        etiLog.level(error) << "Runtime error: " << e.what();
+    }
+    catch (const logic_error &e) {
+        etiLog.level(error) << "Logic error! " << e.what();
+    }
 
-    std::variant<std::monostate, MPEDeframer, GSEDeframer> deframer;
+    return ret;
+}
 
+int Main::start(int argc, char **argv)
+{
     int ch = 0;
     int index = 0;
     while (ch != -1) {
@@ -199,18 +252,6 @@ int main(int argc, char **argv)
 
     int ret = 1;
 
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(struct sigaction));
-    sa.sa_handler = &signal_handler;
-
-    const int sigs[] = {SIGHUP, SIGQUIT, SIGINT, SIGTERM};
-    for (int sig : sigs) {
-        if (sigaction(sig, &sa, nullptr) == -1) {
-            perror("sigaction");
-            return EXIT_FAILURE;
-        }
-    }
-
     try {
         edi::Sender edi_sender(edi_conf);
 
@@ -274,7 +315,7 @@ int main(int argc, char **argv)
             if (webserver.has_value()) {
                 using namespace std::chrono;
                 if (last_stats_update_time + seconds(1) < steady_clock::now()) {
-                    //TODO webserver->update_stats_json(build_stats_json(true));
+                    webserver->update_stats_json(build_stats_json(edi_rx, edi_sender));
                 }
             }
         }

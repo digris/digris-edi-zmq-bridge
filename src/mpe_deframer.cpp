@@ -41,7 +41,7 @@ MPEDeframer::MPEDeframer(const std::string& triplet)
         throw std::runtime_error("PID:IP:PORT needs to have 3 elements!");
     }
 
-    m_pid = std::strtol(elems[0].c_str(), nullptr, 10);
+    m_conf.pid = std::strtol(elems[0].c_str(), nullptr, 10);
     std::string ip = elems[1];
 
     uint32_t ip_u32 = 0;
@@ -49,8 +49,8 @@ MPEDeframer::MPEDeframer(const std::string& triplet)
         throw std::runtime_error("Invalid ip: " + ip);
     }
 
-    m_ip = ip_u32;
-    m_port = std::strtol(elems[2].c_str(), nullptr, 10);
+    m_conf.ip = ip_u32;
+    m_conf.port = std::strtol(elems[2].c_str(), nullptr, 10);
     m_debug = getenv("DEBUG") ? 1 : 0;
 }
 
@@ -69,7 +69,7 @@ void MPEDeframer::process_packet(const std::vector<uint8_t>& udp_packet)
 
 void MPEDeframer::process_ts(const uint8_t *ts)
 {
-    if (not(TS_IS_SYNC(ts) && TS_GET_PID(ts) == m_pid)) {
+    if (not(TS_IS_SYNC(ts) && TS_GET_PID(ts) == m_conf.pid)) {
         return;
     }
 
@@ -276,8 +276,8 @@ void MPEDeframer::extract_edi()
 
     /* skip unknown ip or port */
     if (inet_pton (AF_INET, dbuf, &dip) != 1) return;
-    if (dip != m_ip) return;
-    if (dst_port != m_port) return;
+    if (dip != m_conf.ip) return;
+    if (dst_port != m_conf.port) return;
 
     /* skip headers: MPE + IP + UDP */
     ptr += (12 + 20 + 8);
