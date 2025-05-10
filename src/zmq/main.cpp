@@ -26,7 +26,6 @@
 */
 
 #include <getopt.h>
-#include <cmath>
 #include <cstring>
 #include <chrono>
 #include <iostream>
@@ -65,7 +64,7 @@ static void usage()
     cerr << " -b <backoff>          Number of milliseconds to backoff after an input reset (default " << DEFAULT_BACKOFF << ")." << endl << endl;
 
     cerr << " ZMQ Output options:" << endl;
-    cerr << " -Z <url>              Add a zmq output to URL, e.g. tcp:*:9876 to listen for connections on port 9876 " << endl << endl;
+    cerr << " -z <url>              Add a zmq output to URL, e.g. tcp://*:9876 to listen for connections on port 9876 " << endl << endl;
 
     cerr << " EDI Output options:" << endl;
     cerr << " -v                    Enables verbose mode." << endl;
@@ -267,7 +266,7 @@ int start(int argc, char **argv)
 
     int ch = 0;
     while (ch != -1) {
-        ch = getopt(argc, argv, "C:d:p:s:S:t:Pf:i:va:b:w:xhZ:");
+        ch = getopt(argc, argv, "C:d:p:s:S:t:Pf:i:va:b:w:xhz:");
         switch (ch) {
             case -1:
                 break;
@@ -315,7 +314,7 @@ int start(int argc, char **argv)
             case 'x':
                 drop_late_packets = true;
                 break;
-            case 'Z':
+            case 'z':
                 zmq_conf.urls.push_back(optarg);
                 break;
             case 'h':
