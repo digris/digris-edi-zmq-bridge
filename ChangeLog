@@ -1,6 +1,12 @@
 This file contains information about the changes done to
 the tools in this repository
 
+2025-05-19: Matthias P. Braendli <matthias@mpb.li>
+	(v0.9.0):
+		Make EDI settings configurable per-output, and remove PFT override options.
+		Add HTTP server for stats in JSON format.
+		Change zmq converter -Z to -z and clarify usage.
+
 2025-03-18: Matthias P. Braendli <matthias@mpb.li>
 	(v0.8.0):
 		Add stats for EDI/TCP outputs.
