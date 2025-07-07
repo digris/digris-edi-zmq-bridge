@@ -294,8 +294,9 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
         }
 
         if (not tp.afpacket.empty()) {
+            constexpr size_t AFPACKET_CRC_LEN = 2;
             std::copy(tp.afpacket.begin() + EdiDecoder::AFPACKET_HEADER_LEN,
-                    tp.afpacket.end(),
+                    tp.afpacket.end() - AFPACKET_CRC_LEN,
                     std::back_inserter(edi_tagpacket.raw_tagpacket));
         }
 
