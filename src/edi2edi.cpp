@@ -227,14 +227,12 @@ int Main::start(int argc, char **argv)
                 break;
             case 'i':
                 {
-                    int interleave_percent = stoi(optarg);
-                    if (interleave_percent != 0) {
-                        if (interleave_percent < 0) {
-                            throw runtime_error("EDI output: negative interleave value is invalid.");
-                        }
-
-                        pft_settings.fragment_spreading_factor = (double)interleave_percent / 100.0;
+                    const int interleave_percent = stoi(optarg);
+                    if (interleave_percent < 0) {
+                        throw runtime_error("EDI output: negative interleave value is invalid.");
                     }
+
+                    pft_settings.fragment_spreading_factor = (double)interleave_percent / 100.0;
                 }
                 break;
             case 'v':
