@@ -28,7 +28,6 @@
 #include <thread>
 #include <vector>
 #include <unordered_map>
-#include <cmath>
 #include <cstring>
 #include <fcntl.h>
 #include <getopt.h>
