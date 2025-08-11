@@ -1,6 +1,11 @@
 This file contains information about the changes done to
 the tools in this repository
 
+2025-08-11: Matthias P. Braendli <matthias@mpb.li>
+	(v0.9.1):
+		Fix CRC duplication inside reconstructed AF packet.
+		Improve command line parsing for interleave and -t.
+
 2025-05-19: Matthias P. Braendli <matthias@mpb.li>
 	(v0.9.0):
 		Make EDI settings configurable per-output, and remove PFT override options.
