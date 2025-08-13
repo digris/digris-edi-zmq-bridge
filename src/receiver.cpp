@@ -41,11 +41,7 @@
 
 using namespace std;
 
-// TCP Keepalive settings
-static constexpr int KA_TIME = 10; // Start keepalive after this period (seconds)
-static constexpr int KA_INTVL = 2; // Interval between keepalives (seconds)
-static constexpr int KA_PROBES = 3; // Number of keepalives before connection considered broken
-
+static constexpr auto RECEIVED_DATA_TIMEOUT = chrono::milliseconds(240);
 static constexpr auto RECONNECT_DELAY = chrono::milliseconds(480);
 
 Receiver::Receiver(source_t& source,
@@ -63,7 +59,6 @@ Receiver::Receiver(source_t& source,
         etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
         try {
             sock.connect(source.hostname, source.port, /*nonblock*/ true);
-            sock.enable_keepalive(KA_TIME, KA_INTVL, KA_PROBES);
         }
         catch (const runtime_error& e) {
             m_most_recent_connect_error.message = e.what();
@@ -353,21 +348,37 @@ void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data)
 
 void Receiver::tick()
 {
+    auto do_reconnect = [&]() {
+        try {
+            etiLog.level(debug) << "Attempt connect to " << source.hostname << ":" << source.port;
+            sock.connect(source.hostname, source.port, /*nonblock*/ true);
+        }
+        catch (const runtime_error& e) {
+            if (m_verbosity > 0) {
+                etiLog.level(debug) << "Connecting to " << source.hostname << ":" << source.port <<
+                    " failed: " << e.what();
+            }
+            m_most_recent_connect_error.message = e.what();
+            m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
+        }
+    };
+
     if (source.active) {
-        if (not sock.valid()) {
+        if (sock.valid()) {
+            if (most_recent_rx_time + RECEIVED_DATA_TIMEOUT < chrono::steady_clock::now()) {
+                etiLog.level(info) << "Timeout on TCP " << source.hostname << ":" << source.port;
+                sock.close();
+                source.connected = false;
+                m_edi_decoder.reset();
+
+                do_reconnect();
+            }
+        }
+        else
+        {
             if (reconnect_at < chrono::steady_clock::now()) {
-                try {
-                    sock.connect(source.hostname, source.port, /*nonblock*/ true);
-                    sock.enable_keepalive(KA_TIME, KA_INTVL, KA_PROBES);
-                }
-                catch (const runtime_error& e) {
-                    if (m_verbosity > 0) {
-                        etiLog.level(debug) << "Connecting to " << source.hostname << ":" << source.port <<
-                            " failed: " << e.what();
-                    }
-                    m_most_recent_connect_error.message = e.what();
-                    m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
-                }
+                do_reconnect();
+
                 // Mark connected = true only on successful data receive because of nonblock=true
                 reconnect_at += RECONNECT_DELAY;
             }
