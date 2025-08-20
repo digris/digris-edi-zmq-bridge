@@ -350,7 +350,9 @@ void Receiver::tick()
 {
     auto do_reconnect = [&]() {
         try {
-            etiLog.level(debug) << "Attempt connect to " << source.hostname << ":" << source.port;
+            if (m_verbosity > 0) {
+                etiLog.level(debug) << "Attempt connect to " << source.hostname << ":" << source.port;
+            }
             sock.connect(source.hostname, source.port, /*nonblock*/ true);
         }
         catch (const runtime_error& e) {

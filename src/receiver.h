@@ -25,7 +25,6 @@
 #include <chrono>
 #include <memory>
 #include <vector>
-#include <cmath>
 #include <cstring>
 #include "Socket.h"
 #include "edi/ETIDecoder.hpp"
