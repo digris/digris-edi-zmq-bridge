@@ -464,9 +464,7 @@ void Receiver::receive()
     // ret == 0 means disconnected
 
     if (not success) {
-        if (m_verbosity > 0) {
-            etiLog.level(debug) << "Remote " << source.hostname << ":" << source.port << " closed connection";
-        }
+        etiLog.level(debug) << "Remote " << source.hostname << ":" << source.port << " closed connection";
         sock.close();
         m_edi_decoder.reset();
         source.connected = false;
@@ -476,9 +474,7 @@ void Receiver::receive()
         most_recent_rx_systime = chrono::system_clock::now();
         most_recent_rx_time = chrono::steady_clock::now();
         if (not source.connected) {
-            if (m_verbosity > 0) {
-                etiLog.level(debug) << "Connection to " << source.hostname << ":" << source.port << " reestablished";
-            }
+            etiLog.level(debug) << "Connection to " << source.hostname << ":" << source.port << " reestablished";
             source.num_connects++;
             reconnected_at = chrono::steady_clock::now();
         }
