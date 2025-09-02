@@ -527,7 +527,7 @@ void Main::add_udp_edi_dest()
     pft_settings = {};
 
     edi_conf.destinations.push_back(std::move(edi_udp_dest));
-    edi_udp_dest.reset();
+    edi_udp_dest = make_shared<edi::udp_destination_t>();
 
     source_port_set = false;
     source_addr_set = false;
