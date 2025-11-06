@@ -68,6 +68,8 @@ class Main {
 
         int verbosity = 0;
 
+        int preroll_burst_ms = 0;
+
         std::string rc_socket_name = "";
         int rc_socket = -1;
 

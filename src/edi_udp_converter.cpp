@@ -67,26 +67,28 @@ static void usage()
     cerr << "digris-edi-udp-converter [options]\n\n";
     cerr << "Receive EDI over multicast, remove PFT layer and make AF layer available as TCP server\n\n";
 
-    cerr << " -v               Increase verbosity (Can be given more than once).\n";
-    cerr << " --version        Print the version and quit.\n\n";
-    cerr << " --http <IP:PORT> Enable HTTP Server listening on given IP:PORT\n";
+    cerr << " -v                    Increase verbosity (Can be given more than once).\n";
+    cerr << " --version             Print the version and quit.\n\n";
+    cerr << " --http <IP:PORT>      Enable HTTP Server listening on given IP:PORT\n";
 
     cerr << "Input settings\n";
-    cerr << " -p PORT          Receive UDP on PORT\n";
-    cerr << " -b BINDTO        Bind receive socket to BINDTO address\n";
-    cerr << " -m ADDRESS       Receive from multicast ADDRESS\n";
-    cerr << " -F PID:IP:PORT   Decode MPE like fedi2eti\n";
-    cerr << " -G MIS           Decode GSE like pts2bbf|bbfedi2eti, with additional RTP deframing beforehand\n\n";
-    cerr << " -G MIS:IP:PORT   As above, but only extract packets matching the IP:PORT filter\n\n";
+    cerr << " -p PORT               Receive UDP on PORT\n";
+    cerr << " -b BINDTO             Bind receive socket to BINDTO address\n";
+    cerr << " -m ADDRESS            Receive from multicast ADDRESS\n";
+    cerr << " -F PID:IP:PORT        Decode MPE like fedi2eti\n";
+    cerr << " -G MIS                Decode GSE like pts2bbf|bbfedi2eti, with additional RTP deframing beforehand\n\n";
+    cerr << " -G MIS:IP:PORT        As above, but only extract packets matching the IP:PORT filter\n\n";
 
     cerr << "Output settings\n";
-    cerr << " -T PORT       Listen on TCP port PORT\n\n";
+    cerr << " --preroll-burst <ms>  Do a preroll burst of N ms for new connections\n";
+    cerr << " -T PORT               Add listener on TCP port PORT\n\n";
 
     cerr << "It is best practice to run this tool under a process supervisor that will restart it automatically.\n";
 }
 
 static const struct option longopts[] = {
     {"http", required_argument, 0, 2},
+    {"preroll-burst", required_argument, 0, 3},
     {0, 0, 0, 0}
 };
 
@@ -182,6 +184,9 @@ int main(int argc, char **argv)
 
 int Main::start(int argc, char **argv)
 {
+    std::vector<uint16_t> listen_ports;
+    int preroll_burst_ms = 0;
+
     int ch = 0;
     int index = 0;
     while (ch != -1) {
@@ -210,6 +215,9 @@ int Main::start(int argc, char **argv)
                             all_args.str());
                 }
                 break;
+            case 3: // --preroll-burst in milliseconds
+                preroll_burst_ms = stoi(optarg);
+                break;
             case 'F':
                 deframer = MPEDeframer(optarg);
                 break;
@@ -220,12 +228,7 @@ int Main::start(int argc, char **argv)
                 rx_bindto = optarg;
                 break;
             case 'T':
-                {
-                    auto edi_destination = make_shared<edi::tcp_server_t>();
-                    edi_destination->listen_port = stoi(optarg);
-                    edi_destination->pft_settings.enable_pft = false;
-                    edi_conf.destinations.push_back(std::move(edi_destination));
-                }
+                listen_ports.push_back(stoi(optarg));
                 break;
             case 'm':
                 rx_mcastaddr = optarg;
@@ -244,6 +247,14 @@ int Main::start(int argc, char **argv)
     }
 
     edi_conf.verbose = verbosity > 1;
+
+    for (uint16_t port : listen_ports) {
+        auto edi_destination = make_shared<edi::tcp_server_t>();
+        edi_destination->listen_port = port;
+        edi_destination->pft_settings.enable_pft = false;
+        edi_destination->tcp_server_preroll_buffers = std::ceil(preroll_burst_ms / 24.0);
+        edi_conf.destinations.push_back(std::move(edi_destination));
+    }
 
     if (edi_conf.destinations.empty()) {
         etiLog.level(error) << "No EDI destinations set";

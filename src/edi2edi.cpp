@@ -71,6 +71,7 @@ static void usage()
     cerr << " -v                        Increase verbosity (Can be given more than once).\n";
     cerr << " --align <alignement>      Set the alignment of the TAG Packet (default 8).\n";
     cerr << " -b <backoff>              Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
+    cerr << " --preroll-burst <ms>      For TCP outputs, do a preroll burst of N ms for new connections\n";
     cerr << " -r <socket_path>          Enable UNIX DGRAM remote control socket and bind to given path\n";
     cerr << " --http <IP:PORT>          Enable HTTP Server listening on given IP:PORT\n";
     cerr << " --version                 Show the version and quit.\n\n";
@@ -109,6 +110,7 @@ static const struct option longopts[] = {
     {"http", required_argument, 0, 3},
     {"align", required_argument, 0, 5},
     {"no-drop-late", no_argument, 0, 6},
+    {"preroll-burst", required_argument, 0, 7},
     {0, 0, 0, 0}
 };
 
@@ -174,6 +176,9 @@ int Main::start(int argc, char **argv)
             case 6: // --no-drop-late
                 edisendersettings.drop_late = false;
                 break;
+            case 7: // --preroll-burst in milliseconds
+                preroll_burst_ms = stoi(optarg);
+                break;
             case 'm':
                 if (strcmp(optarg, "switch") == 0) {
                     mode = Mode::Switching;
@@ -196,14 +201,14 @@ int Main::start(int argc, char **argv)
                         return 1;
                     }
 
+                    const bool enabled = ch == 'c';
                     try {
-                        const bool enabled = ch == 'c';
                         sources.push_back({
                                 optarg_s.substr(0, pos_colon),
                                 stoi(optarg_s.substr(pos_colon+1)),
                                 enabled});
                     }
-                    catch (logic_error& e) {
+                    catch (const std::exception& e) {
                         throw runtime_error(string{"The -c or -F option "} + optarg_s + " is not valid");
                     }
                 }
@@ -251,6 +256,7 @@ int Main::start(int argc, char **argv)
                     auto edi_tcp_dest = make_shared<edi::tcp_server_t>();
                     edi_tcp_dest->listen_port = stoi(optarg);
                     edi_tcp_dest->pft_settings.enable_pft = false;
+                    edi_tcp_dest->tcp_server_preroll_buffers = std::ceil(preroll_burst_ms / 24.0);
                     edi_conf.destinations.push_back(std::move(edi_tcp_dest));
                 }
                 break;
