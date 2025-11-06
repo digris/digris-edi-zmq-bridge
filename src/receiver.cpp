@@ -41,7 +41,6 @@
 
 using namespace std;
 
-static constexpr auto RECEIVED_DATA_TIMEOUT = chrono::milliseconds(240);
 static constexpr auto RECONNECT_DELAY = chrono::milliseconds(480);
 
 Receiver::Receiver(source_t& source,
@@ -367,7 +366,7 @@ void Receiver::tick()
 
     if (source.active) {
         if (sock.valid()) {
-            if (most_recent_rx_time + RECEIVED_DATA_TIMEOUT < chrono::steady_clock::now()) {
+            if (most_recent_rx_time + source.receive_timeout < chrono::steady_clock::now()) {
                 etiLog.level(info) << "Timeout on TCP " << source.hostname << ":" << source.port;
                 sock.close();
                 source.connected = false;

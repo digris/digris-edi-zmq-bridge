@@ -72,6 +72,7 @@ static void usage()
     cerr << " --align <alignement>      Set the alignment of the TAG Packet (default 8).\n";
     cerr << " -b <backoff>              Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
     cerr << " --preroll-burst <ms>      For TCP outputs, do a preroll burst of N ms for new connections\n";
+    cerr << " --receive-timeout <ms>    Reconnect the source socket after N ms of no data\n";
     cerr << " -r <socket_path>          Enable UNIX DGRAM remote control socket and bind to given path\n";
     cerr << " --http <IP:PORT>          Enable HTTP Server listening on given IP:PORT\n";
     cerr << " --version                 Show the version and quit.\n\n";
@@ -111,6 +112,7 @@ static const struct option longopts[] = {
     {"align", required_argument, 0, 5},
     {"no-drop-late", no_argument, 0, 6},
     {"preroll-burst", required_argument, 0, 7},
+    {"receive-timeout", required_argument, 0, 8},
     {0, 0, 0, 0}
 };
 
@@ -178,6 +180,9 @@ int Main::start(int argc, char **argv)
                 break;
             case 7: // --preroll-burst in milliseconds
                 preroll_burst_ms = stoi(optarg);
+                break;
+            case 8: // --receive-timeout in milliseconds
+                receive_timeout = std::chrono::milliseconds(stoi(optarg));
                 break;
             case 'm':
                 if (strcmp(optarg, "switch") == 0) {
@@ -331,6 +336,8 @@ int Main::start(int argc, char **argv)
 
     receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
     for (auto& source : sources) {
+        source.receive_timeout = receive_timeout;
+
         auto tagpacket_callback = [&](tagpacket_t&& tp, Receiver* r) {
             edisender.push_tagpacket(std::move(tp), r);
         };

@@ -41,6 +41,8 @@ struct tagpacket_t {
     EdiDecoder::seq_info_t seq;
 };
 
+constexpr std::chrono::milliseconds DEFAULT_RECEIVE_TIMEOUT = std::chrono::milliseconds(240);
+
 struct source_t {
     source_t(std::string hostname, int port, bool enabled) :
         hostname(hostname), port(port), enabled(enabled) {}
@@ -52,6 +54,7 @@ struct source_t {
 
     // User-controlled setting
     bool enabled;
+    std::chrono::milliseconds receive_timeout = DEFAULT_RECEIVE_TIMEOUT;
 
     // Mode merging: active will be set for all enabled inputs.
     // Mode switching: only one input will be active

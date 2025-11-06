@@ -69,11 +69,13 @@ class Main {
         int verbosity = 0;
 
         int preroll_burst_ms = 0;
+        std::chrono::milliseconds receive_timeout =
+            std::chrono::milliseconds(DEFAULT_RECEIVE_TIMEOUT);
 
         std::string rc_socket_name = "";
         int rc_socket = -1;
 
-        std::chrono::steady_clock::duration switch_delay =
+        std::chrono::milliseconds switch_delay =
             std::chrono::milliseconds(DEFAULT_SWITCH_DELAY);
 
         const std::chrono::steady_clock::time_point startup_time =
