@@ -1,6 +1,13 @@
 This file contains information about the changes done to
 the tools in this repository
 
+2025-11-17: Matthias P. Braendli <matthias@mpb.li>
+	(v0.9.2):
+		Fix race condition that can lead to crashes related to stats.
+		Replace TCP Keepalive with internal timeout.
+		Add options for pre-roll burst and receive timeout.
+		Improve logging.
+
 2025-08-11: Matthias P. Braendli <matthias@mpb.li>
 	(v0.9.1):
 		Fix CRC duplication inside reconstructed AF packet.
