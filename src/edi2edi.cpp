@@ -57,6 +57,8 @@ static void signal_handler(int signum)
 
 static void usage()
 {
+    using namespace std::chrono;
+
     cerr << "\nUsage:\n";
     cerr << "digris-edi-tcp-converter [options] -c <source>\n\n";
 
@@ -72,7 +74,8 @@ static void usage()
     cerr << " --align <alignement>      Set the alignment of the TAG Packet (default 8).\n";
     cerr << " -b <backoff>              Number of milliseconds to backoff after an interruption (default " << DEFAULT_BACKOFF << ").\n";
     cerr << " --preroll-burst <ms>      For TCP outputs, do a preroll burst of N ms for new connections\n";
-    cerr << " --receive-timeout <ms>    Reconnect the source socket after N ms of no data\n";
+    cerr << " --receive-timeout <ms>    Reconnect the source socket after N ms of no data (default " <<
+        duration_cast<milliseconds>(DEFAULT_RECEIVE_TIMEOUT).count() << "ms)\n";
     cerr << " -r <socket_path>          Enable UNIX DGRAM remote control socket and bind to given path\n";
     cerr << " --http <IP:PORT>          Enable HTTP Server listening on given IP:PORT\n";
     cerr << " --version                 Show the version and quit.\n\n";
