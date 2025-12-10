@@ -275,46 +275,52 @@ static bool send_http_response(
 
 bool WebServer::dispatch_client(Socket::TCPSocket&& sock)
 {
-    Socket::TCPSocket s(std::move(sock));
+    try {
+        Socket::TCPSocket s(std::move(sock));
 
-    bool success = false;
+        bool success = false;
 
-    if (not s.valid()) {
-        etiLog.level(error) << "socket in dispatcher not valid!";
-        return false;
-    }
-
-    const auto req = parse_http_headers(s);
-
-    if (not req.valid) {
-        return false;
-    }
-
-    if (req.is_get) {
-        if (req.url == "/") {
-            success = send_index(s);
+        if (not s.valid()) {
+            etiLog.level(error) << "socket in dispatcher not valid!";
+            return false;
         }
-        else if (req.url == "/stats.json") {
-            success = send_stats(s);
+
+        const auto req = parse_http_headers(s);
+
+        if (not req.valid) {
+            return false;
         }
-    }
-    else if (req.is_post) {
-        if (req.url == "/rc") {
-            //success = handle_rc(s, req.post_data);
+
+        if (req.is_get) {
+            if (req.url == "/") {
+                success = send_index(s);
+            }
+            else if (req.url == "/stats.json") {
+                success = send_stats(s);
+            }
+        }
+        else if (req.is_post) {
+            if (req.url == "/rc") {
+                //success = handle_rc(s, req.post_data);
+            }
+            else {
+                etiLog.level(warn) << "Could not understand POST request " << req.url;
+            }
         }
         else {
-            etiLog.level(warn) << "Could not understand POST request " << req.url;
+            throw logic_error("valid req is neither GET nor POST!");
         }
-    }
-    else {
-        throw logic_error("valid req is neither GET nor POST!");
-    }
 
-    if (not success) {
-        send_http_response(s, http_404, "Could not understand request.\r\n");
-    }
+        if (not success) {
+            send_http_response(s, http_404, "Could not understand request.\r\n");
+        }
 
-    return success;
+        return success;
+    }
+    catch (const std::exception& e)
+    {
+        return false;
+    }
 }
 
 bool WebServer::send_index(Socket::TCPSocket& s)
