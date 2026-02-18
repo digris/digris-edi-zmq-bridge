@@ -31,7 +31,7 @@
 
 class WebServer {
     public:
-        WebServer(std::string listen_ip, uint16_t port, std::string all_args);
+        WebServer(std::string listen_ip, uint16_t port, const std::string& index_content);
         virtual ~WebServer();
         WebServer(const WebServer&) = delete;
         WebServer& operator=(const WebServer&) = delete;
@@ -49,7 +49,7 @@ class WebServer {
         std::thread handler_thread;
         std::atomic<bool> running = ATOMIC_VAR_INIT(true);
 
-        std::string all_args;
+        std::string index_content;
 
         mutable std::mutex data_mutex;
         std::string stats_json;

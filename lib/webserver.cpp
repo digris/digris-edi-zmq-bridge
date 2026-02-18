@@ -43,8 +43,8 @@ static const char* http_contenttype_json = "Content-Type: application/json; char
 
 static const char* http_nocache = "Cache-Control: no-cache\r\n";
 
-WebServer::WebServer(std::string listen_ip, uint16_t port, std::string all_args)
-    : all_args(all_args)
+WebServer::WebServer(std::string listen_ip, uint16_t port, const std::string& index_content)
+    : index_content(index_content)
 {
     server_socket.listen(port, listen_ip);
 
@@ -329,7 +329,7 @@ bool WebServer::send_index(Socket::TCPSocket& s)
         return false;
     }
 
-    ssize_t ret = s.send(all_args.c_str(), all_args.size(), MSG_NOSIGNAL);
+    ssize_t ret = s.send(index_content.c_str(), index_content.size(), MSG_NOSIGNAL);
     if (ret == -1) {
         etiLog.level(warn) << "Failed to send index";
         return false;
