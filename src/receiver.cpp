@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2022
+   Copyright (C) 2026
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -39,11 +39,10 @@
 #include "receiver.h"
 #include "crc.h"
 
-using namespace std;
-
-static constexpr auto RECONNECT_DELAY = chrono::milliseconds(480);
+static constexpr auto RECONNECT_DELAY = std::chrono::milliseconds(480);
 
 Receiver::Receiver(source_t& source,
+        std::chrono::milliseconds receive_timeout,
         std::function<void(tagpacket_t&&, Receiver*)> push_tagpacket,
         std::function<void(eti_frame_t&&)> eti_frame_callback,
         bool reconstruct_eti,
@@ -52,17 +51,16 @@ Receiver::Receiver(source_t& source,
     m_push_tagpacket_callback(push_tagpacket),
     m_eti_frame_callback(eti_frame_callback),
     m_reconstruct_eti(reconstruct_eti),
+    m_receive_timeout(receive_timeout),
     m_verbosity(verbosity)
 {
-    if (source.active) {
-        etiLog.level(info) << "Connecting to TCP " << source.hostname << ":" << source.port;
-        try {
-            sock.connect(source.hostname, source.port, /*nonblock*/ true);
-        }
-        catch (const runtime_error& e) {
-            m_most_recent_connect_error.message = e.what();
-            m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
-        }
+    if (std::holds_alternative<tcp_source_t>(source)) {
+        const auto& s = std::get<tcp_source_t>(source);
+        enabled = s.enabled_at_startup;
+    }
+    else {
+        const auto& s = std::get<udp_source_t>(source);
+        enabled = s.enabled_at_startup;
     }
 }
 
@@ -184,7 +182,7 @@ void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data)
     // a FIC
     if (    (m_fc.mid == 3 and m_fic.size() != 32 * 4) or
             (m_fc.mid != 3 and m_fic.size() != 24 * 4) ) {
-        stringstream ss;
+        std::stringstream ss;
         ss << "Invalid FIC length " << m_fic.size() <<
             " for MID " << m_fc.mid;
         throw std::invalid_argument(ss.str());
@@ -329,67 +327,100 @@ void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data)
     m_fic.clear();
     m_subchannels.clear();
 
-    using namespace chrono;
+    using namespace std::chrono;
     tagpacket_t tp;
-    tp.hostnames = source.hostname;
+    tp.source_urls = source_url();
     tp.seq = tag_data.seq;
     tp.dlfc = m_fc.dlfc;
     tp.afpacket = std::move(tag_data.afpacket);
     tp.received_at = steady_clock::now();
     tp.timestamp = std::move(tag_data.timestamp);
     const auto margin = tp.timestamp.to_system_clock() - system_clock::now();
-    margins_ms.push_back(duration_cast<milliseconds>(margin).count());
-    if (margins_ms.size() > 2500 /* 1 minute */) {
-        margins_ms.pop_front();
+    m_margins_ms.push_back(duration_cast<milliseconds>(margin).count());
+    if (m_margins_ms.size() > 2500 /* 1 minute */) {
+        m_margins_ms.pop_front();
     }
     m_push_tagpacket_callback(std::move(tp), this);
 }
 
 void Receiver::tick()
 {
-    auto do_reconnect = [&]() {
-        try {
-            if (m_verbosity > 0) {
-                etiLog.level(debug) << "Attempt connect to " << source.hostname << ":" << source.port;
-            }
-            sock.connect(source.hostname, source.port, /*nonblock*/ true);
-        }
-        catch (const runtime_error& e) {
-            if (m_verbosity > 0) {
-                etiLog.level(debug) << "Connecting to " << source.hostname << ":" << source.port <<
-                    " failed: " << e.what();
-            }
-            m_most_recent_connect_error.message = e.what();
-            m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
-        }
-    };
+    if (std::holds_alternative<tcp_source_t>(source)) {
+        const auto& s = std::get<tcp_source_t>(source);
 
-    if (source.active) {
-        if (sock.valid()) {
-            if (most_recent_rx_time + source.receive_timeout < chrono::steady_clock::now()) {
-                etiLog.level(info) << "Timeout on TCP " << source.hostname << ":" << source.port;
-                sock.close();
-                source.connected = false;
-                m_edi_decoder.reset();
+        auto do_reconnect = [&]() {
+            m_tcp_sock.close();
+            m_edi_decoder.reset();
 
-                do_reconnect();
+            try {
+                if (m_verbosity > 0) {
+                    etiLog.level(debug) << "Attempt connect to " << s.hostname << ":" << s.port;
+                }
+                m_tcp_sock.connect(s.hostname, s.port, /*nonblock*/ true);
+                m_tcp_sock_state = tcp_sock_state_e::CONNECTING;
+            }
+            catch (const std::runtime_error& e) {
+                if (m_verbosity > 0) {
+                    etiLog.level(debug) << "Connecting to " << s.hostname << ":" << s.port <<
+                        " failed: " << e.what();
+                }
+                m_most_recent_connect_error.message = e.what();
+                m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
+            }
+
+            // Mark connected = true only on successful data receive because of nonblock=true
+            reconnect_at += RECONNECT_DELAY;
+        };
+
+        if (active) {
+            switch (m_tcp_sock_state) {
+                case tcp_sock_state_e::DISABLED:
+                    do_reconnect();
+                    break;
+                case tcp_sock_state_e::CONNECTING:
+                    if (reconnect_at < std::chrono::steady_clock::now()) {
+                        etiLog.level(info) << "Timeout during reconnect on TCP " <<
+                            s.hostname << ":" << s.port;
+                        do_reconnect();
+                    }
+                    break;
+                case tcp_sock_state_e::CONNECTED:
+                    if (most_recent_rx_time + m_receive_timeout < std::chrono::steady_clock::now()) {
+                        etiLog.level(info) << "Timeout on TCP " << s.hostname << ":" << s.port;
+                        do_reconnect();
+                    }
+                    break;
             }
         }
-        else
-        {
-            if (reconnect_at < chrono::steady_clock::now()) {
-                do_reconnect();
-
-                // Mark connected = true only on successful data receive because of nonblock=true
-                reconnect_at += RECONNECT_DELAY;
+        else {
+            switch (m_tcp_sock_state) {
+                case tcp_sock_state_e::DISABLED:
+                    break;
+                case tcp_sock_state_e::CONNECTING:
+                case tcp_sock_state_e::CONNECTED:
+                    etiLog.level(info) << "Disconnecting from TCP " << s.hostname << ":" << s.port;
+                    m_tcp_sock.close();
+                    m_tcp_sock_state = tcp_sock_state_e::DISABLED;
+                    m_edi_decoder.reset();
+                    break;
             }
         }
     }
     else {
-        if (sock.valid()) {
-            etiLog.level(info) << "Disconnecting from TCP " << source.hostname << ":" << source.port;
-            sock.close();
-            source.connected = false;
+        if (active and not m_udp_sock_ready) {
+            const auto& s = std::get<udp_source_t>(source);
+            if (IN_MULTICAST(ntohl(inet_addr(s.mcastaddr.c_str())))) {
+                m_udp_sock.init_receive_multicast(s.port, s.bindto, s.mcastaddr);
+            }
+            else {
+                m_udp_sock.reinit(s.port, s.bindto);
+            }
+            m_udp_sock_ready = true;
+        }
+        else if (not active and m_udp_sock_ready) {
+            etiLog.level(debug) << "Stop UDP from " << source_url();
+            m_udp_sock.close();
+            m_udp_sock_ready = false;
             m_edi_decoder.reset();
         }
     }
@@ -399,14 +430,14 @@ Receiver::margin_stats_t Receiver::get_margin_stats() const
 {
     margin_stats_t r;
 
-    if (source.active and margins_ms.size() > 0) {
-        r.num_measurements = margins_ms.size();
+    if (active and m_margins_ms.size() > 0) {
+        r.num_measurements = m_margins_ms.size();
         const double n = r.num_measurements;
         double sum = 0.0;
         r.min = std::numeric_limits<double>::max();
         r.max = -std::numeric_limits<double>::max();
 
-        for (const double t : margins_ms) {
+        for (const double t : m_margins_ms) {
             sum += t;
 
             if (t < r.min) {
@@ -420,7 +451,7 @@ Receiver::margin_stats_t Receiver::get_margin_stats() const
         r.mean = sum / n;
 
         double sq_sum = 0;
-        for (const double t : margins_ms) {
+        for (const double t : m_margins_ms) {
             sq_sum += (t-r.mean) * (t-r.mean);
         }
         r.stdev = sqrt(sq_sum / n);
@@ -429,10 +460,76 @@ Receiver::margin_stats_t Receiver::get_margin_stats() const
     return r;
 }
 
+int Receiver::get_sockfd() const
+{
+    if (std::holds_alternative<tcp_source_t>(source)) {
+        return m_tcp_sock.get_sockfd();
+    }
+    else {
+        return m_udp_sock.getNativeSocket();
+    }
+}
+
+bool Receiver::connected() const
+{
+    if (std::holds_alternative<tcp_source_t>(source)) {
+        return m_tcp_sock_state == tcp_sock_state_e::CONNECTED;
+    }
+    else {
+        return m_udp_sock_ready;
+    }
+}
+
 void Receiver::receive()
 {
+    if (std::holds_alternative<tcp_source_t>(source)) {
+        receive_tcp();
+    }
+    else {
+        receive_udp();
+    }
+}
+
+void Receiver::receive_udp()
+{
+    bool success = false;
+    try {
+        auto p = m_udp_sock.receive(2048);
+        if (not p.buffer.empty()) {
+            EdiDecoder::Packet packet{std::move(p.buffer)};
+            if (!m_edi_decoder) {
+                m_edi_decoder = std::make_shared<EdiDecoder::ETIDecoder>(*this);
+                m_edi_decoder->set_verbose(m_verbosity > 1);
+            }
+            m_edi_decoder->push_packet(packet);
+
+            using namespace std::chrono;
+            most_recent_rx_systime = system_clock::now();
+            most_recent_rx_time = steady_clock::now();
+            success = true;
+        }
+    }
+    catch (const std::runtime_error& e)
+    {
+        etiLog.level(error) << "UDP receive " << source_url() << " error: " << strerror(errno);
+    }
+
+    if (not success) {
+        reconnect_at = std::chrono::steady_clock::now() + RECONNECT_DELAY;
+        m_udp_sock_ready = true;
+    }
+    else {
+        reconnected_at = std::chrono::steady_clock::now();
+        m_udp_sock_ready = false;
+    }
+}
+
+void Receiver::receive_tcp()
+{
+    using namespace std::chrono;
+
     const size_t bufsize = 32;
-    vector<uint8_t> buf(bufsize);
+    std::vector<uint8_t> buf(bufsize);
     bool success = false;
     ssize_t ret = ::recv(get_sockfd(), buf.data(), buf.size(), 0);
     if (ret == -1) {
@@ -442,18 +539,18 @@ void Receiver::receive()
         else if (errno == ECONNREFUSED) {
             // Behave as if disconnected
             if (m_verbosity > 0) {
-                etiLog.level(debug) << "Receive from " << source.hostname << ":" << source.port << ": Connection refused";
+                etiLog.level(debug) << "Receive from " << source_url() << " Connection refused";
             }
         }
         else {
-            etiLog.level(error) << "TCP receive () error: " << strerror(errno);
+            etiLog.level(error) << "TCP receive " << source_url() << " error: " << strerror(errno);
             success = false;
         }
     }
     else if (ret > 0) {
         buf.resize(ret);
         if (!m_edi_decoder) {
-            m_edi_decoder = make_shared<EdiDecoder::ETIDecoder>(*this);
+            m_edi_decoder = std::make_shared<EdiDecoder::ETIDecoder>(*this);
             m_edi_decoder->set_verbose(m_verbosity > 1);
         }
 
@@ -463,21 +560,21 @@ void Receiver::receive()
     // ret == 0 means disconnected
 
     if (not success) {
-        etiLog.level(debug) << "Remote " << source.hostname << ":" << source.port << " closed connection";
-        sock.close();
+        etiLog.level(debug) << "Remote " << source_url() << " closed connection";
+        m_tcp_sock.close();
         m_edi_decoder.reset();
-        source.connected = false;
-        reconnect_at = chrono::steady_clock::now() + RECONNECT_DELAY;
+        m_tcp_sock_state = tcp_sock_state_e::DISABLED;
+        reconnect_at = steady_clock::now() + RECONNECT_DELAY;
     }
     else {
-        most_recent_rx_systime = chrono::system_clock::now();
-        most_recent_rx_time = chrono::steady_clock::now();
-        if (not source.connected) {
-            etiLog.level(debug) << "Connection to " << source.hostname << ":" << source.port << " reestablished";
-            source.num_connects++;
-            reconnected_at = chrono::steady_clock::now();
+        most_recent_rx_systime = system_clock::now();
+        most_recent_rx_time = steady_clock::now();
+        if (m_tcp_sock_state == tcp_sock_state_e::CONNECTING) {
+            etiLog.level(debug) << "Connection to " << source_url() << " reestablished";
+            m_num_connects++;
+            reconnected_at = steady_clock::now();
         }
-        source.connected = true;
+        m_tcp_sock_state = tcp_sock_state_e::CONNECTED;
     }
 }
 
@@ -488,3 +585,22 @@ void Receiver::set_verbosity(int verbosity)
         m_edi_decoder->set_verbose(m_verbosity > 1);
     }
 }
+
+std::string Receiver::source_url() const {
+    if (std::holds_alternative<tcp_source_t>(source)) {
+        const auto& s = std::get<tcp_source_t>(source);
+        return std::string{"tcp://"} + s.hostname + ":" + std::to_string(s.port);
+    }
+    else {
+        const auto& s = std::get<udp_source_t>(source);
+        if (not s.mcastaddr.empty()) {
+            return std::string{"udp://"} +
+                s.bindto + "@" + s.mcastaddr + ":" + std::to_string(s.port);
+        }
+        else {
+            return std::string{"udp://"} +
+                s.bindto + ":" + std::to_string(s.port);
+        }
+    }
+}
+

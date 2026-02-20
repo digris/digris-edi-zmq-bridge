@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2025
+   Copyright (C) 2026
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -24,6 +24,7 @@
 #pragma once
 #include <chrono>
 #include <memory>
+#include <variant>
 #include <vector>
 #include <cstring>
 #include "Socket.h"
@@ -31,8 +32,8 @@
 
 
 struct tagpacket_t {
-    // source information
-    std::string hostnames;
+    // source information, concatenated with semicolons
+    std::string source_urls;
 
     std::vector<uint8_t> afpacket;
     uint16_t dlfc;
@@ -43,27 +44,20 @@ struct tagpacket_t {
 
 constexpr std::chrono::milliseconds DEFAULT_RECEIVE_TIMEOUT = std::chrono::milliseconds(240);
 
-struct source_t {
-    source_t(std::string hostname, int port, bool enabled) :
-        hostname(hostname), port(port), enabled(enabled) {}
-
-    void reset_counters() { num_connects = 0; }
-
+struct tcp_source_t {
+    bool enabled_at_startup = true;
     std::string hostname;
     int port;
-
-    // User-controlled setting
-    bool enabled;
-    std::chrono::milliseconds receive_timeout = DEFAULT_RECEIVE_TIMEOUT;
-
-    // Mode merging: active will be set for all enabled inputs.
-    // Mode switching: only one input will be active
-    bool active = false;
-
-    bool connected = false;
-
-    uint64_t num_connects = 0;
 };
+
+struct udp_source_t {
+    bool enabled_at_startup = true;
+    std::string bindto = "0.0.0.0";
+    std::string mcastaddr;
+    int port;
+};
+
+using source_t = std::variant<tcp_source_t, udp_source_t>;
 
 struct eti_frame_t {
     std::vector<uint8_t> frame;
@@ -76,6 +70,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
     public:
         Receiver(
                 source_t& source,
+                std::chrono::milliseconds receive_timeout,
                 std::function<void(tagpacket_t&&, Receiver*)> push_tagpacket,
                 std::function<void(eti_frame_t&&)> eti_frame_callback,
                 bool reconstruct_eti,
@@ -108,8 +103,9 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         virtual void assemble(EdiDecoder::ReceivedTagPacket&& tag_data) override;
 
         // Must return -1 if the socket is not poll()able
-        int get_sockfd() const { return sock.get_sockfd(); }
+        int get_sockfd() const;
 
+        bool connected() const;
         void receive();
         void tick();
         struct margin_stats_t {
@@ -121,18 +117,15 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         };
         margin_stats_t get_margin_stats() const;
 
-        std::chrono::system_clock::time_point get_systime_last_packet() const
-        {
+        std::chrono::system_clock::time_point get_systime_last_packet() const {
             return most_recent_rx_systime;
         }
 
-        std::chrono::steady_clock::time_point get_time_last_packet() const
-        {
+        std::chrono::steady_clock::time_point get_time_last_packet() const {
             return most_recent_rx_time;
         }
 
-        uint64_t connection_uptime_ms() const
-        {
+        uint64_t connection_uptime_ms() const {
             using namespace std::chrono;
             return duration_cast<milliseconds>(steady_clock::now() - reconnected_at).count();
         }
@@ -142,26 +135,44 @@ class Receiver : public EdiDecoder::ETIDataCollector {
             std::chrono::system_clock::time_point timestamp;
         };
 
-        connection_error_t get_last_connection_error() const
-        {
+        connection_error_t get_last_connection_error() const {
             return m_most_recent_connect_error;
         }
 
-        void reset_counters() { num_late = 0; }
+        void reset_counters() { num_late = 0; m_num_connects = 0; }
+        size_t num_connects() const { return m_num_connects; }
 
-        source_t& source;
+        source_t source;
 
         // The EDISender will update the late count
         uint64_t num_late = 0;
 
         void set_verbosity(int verbosity);
 
+        std::string source_url() const;
+
+        // User-controlled setting
+        bool enabled;
+
+        // Mode merging: active will be set for all enabled inputs.
+        // Mode switching: only one input will be active
+        bool active = false;
+
+
     private:
+        void receive_tcp();
+        void receive_udp();
+
         std::function<void(tagpacket_t&& tagpacket, Receiver*)> m_push_tagpacket_callback;
         std::function<void(eti_frame_t&&)> m_eti_frame_callback;
         bool m_reconstruct_eti = false;
         std::shared_ptr<EdiDecoder::ETIDecoder> m_edi_decoder;
 
+        std::chrono::milliseconds m_receive_timeout = DEFAULT_RECEIVE_TIMEOUT;
+
+
+
+        uint64_t m_num_connects = 0;
         bool m_fc_valid = false;
         EdiDecoder::eti_fc_data m_fc;
         bool m_proto_valid = false;
@@ -185,7 +196,14 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         std::chrono::steady_clock::time_point most_recent_rx_time = std::chrono::steady_clock::time_point();
         std::chrono::system_clock::time_point most_recent_rx_systime = std::chrono::system_clock::time_point();
 
-        std::deque<int> margins_ms;
+        std::deque<int> m_margins_ms;
 
-        Socket::TCPSocket sock;
+        enum class tcp_sock_state_e {
+            DISABLED, CONNECTING, CONNECTED
+        };
+        tcp_sock_state_e m_tcp_sock_state = tcp_sock_state_e::DISABLED;
+        Socket::TCPSocket m_tcp_sock;
+
+        bool m_udp_sock_ready = false;
+        Socket::UDPSocket m_udp_sock;
 };

@@ -275,7 +275,6 @@ UDPSocket::~UDPSocket()
     }
 }
 
-
 UDPPacket UDPSocket::receive(size_t max_size)
 {
     struct sockaddr_in addr;

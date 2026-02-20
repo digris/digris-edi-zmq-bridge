@@ -27,7 +27,6 @@
 
 #include "EDISender.h"
 #include "Log.h"
-#include <cmath>
 #include <cstring>
 #include <algorithm>
 
@@ -82,7 +81,7 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
             late = true;
 
             ss << " P " << _pending_tagpackets.size() << " dlfc " <<
-                tp.dlfc << " no seconds timestamp from " << tp.hostnames;
+                tp.dlfc << " no seconds timestamp from " << tp.source_urls;
         }
         else {
             const auto t_frame = tp.timestamp.to_system_clock();
@@ -91,14 +90,14 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
             const auto margin_ms = chrono::duration_cast<chrono::milliseconds>(margin).count();
 
             ss << " P " << _pending_tagpackets.size() << " dlfc " <<
-                tp.dlfc << " margin " << margin_ms << " from " << tp.hostnames;
+                tp.dlfc << " margin " << margin_ms << " from " << tp.source_urls;
 
             late = t_release < t_now;
         }
     }
     else {
         ss << " P " << _pending_tagpackets.size() << " dlfc  " <<
-            tp.dlfc << " wait disabled, from " << tp.hostnames;
+            tp.dlfc << " wait disabled, from " << tp.source_urls;
     }
 
     // If we receive a packet we already handed off to the other thread
@@ -128,13 +127,13 @@ void EDISender::push_tagpacket(tagpacket_t&& tp, Receiver* r)
                     if (tp.dlfc != it->dlfc) {
                         ss << " dlfc err";
                         etiLog.level(warn) << "Received packet " << tp.dlfc << " from "
-                            << tp.hostnames <<
+                            << tp.source_urls <<
                             " with same timestamp but different DLFC than previous packet from "
-                            << it->hostnames << " with " << it->dlfc;
+                            << it->source_urls << " with " << it->dlfc;
                     }
                     else {
                         ss << " dup";
-                        it->hostnames += ";" + tp.hostnames;
+                        it->source_urls += ";" + tp.source_urls;
                     }
 
                     inserted = true;

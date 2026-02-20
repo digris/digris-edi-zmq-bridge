@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2025
+   Copyright (C) 2026
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -83,7 +83,11 @@ static void usage()
     cerr << "The following options can be given several times:\n";
     cerr << "EDI Input options\n";
     cerr << " -c <host:port>            Add enabled input connecting to given host and port using TCP.\n";
-    cerr << " -F <host:port>            Add disabled input connecting to given host and port using TCP.\n";
+    cerr << " -F <host:port>            Add disabled fallback input connecting to given host and port using TCP.\n";
+    cerr << " -u <:port>                Add EDI/UDP unicast input on default interface.\n";
+    cerr << " -u <intf:port>            Add EDI/UDP unicast input on specific interface. (e.g. 192.168.1.22:12000)\n";
+    cerr << " -u <@group:port>          Add EDI/UDP multicast input, (e.g. @239.100.101.22:12000)\n";
+    cerr << " -u <intf@group:port>      Add EDI/UDP multicast input, bound to specific IP (e.g. 192.168.1.22@239.100.101.22:12000)\n";
 
     cerr << "\nEDI/UDP Output options, with PFT enabled.\n";
     cerr << " Specify -i and -f first, then the other options.\n";
@@ -141,10 +145,12 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
+    std::vector<source_t> sources;
+
     int ch = 0;
     int index = 0;
     while (ch != -1) {
-        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:T:f:i:vb:w:x:z:h", longopts, &index);
+        ch = getopt_long(argc, argv, "c:C:d:F:m:p:r:s:S:t:T:f:i:u:vb:w:x:z:h", longopts, &index);
         switch (ch) {
             case -1:
                 break;
@@ -211,10 +217,42 @@ int Main::start(int argc, char **argv)
 
                     const bool enabled = ch == 'c';
                     try {
-                        sources.push_back({
-                                optarg_s.substr(0, pos_colon),
-                                stoi(optarg_s.substr(pos_colon+1)),
-                                enabled});
+                        tcp_source_t source {
+                            enabled, optarg_s.substr(0, pos_colon), stoi(optarg_s.substr(pos_colon+1)) };
+
+                        sources.push_back(source);
+                    }
+                    catch (const std::exception& e) {
+                        throw runtime_error(string{"The -c or -F option "} + optarg_s + " is not valid");
+                    }
+                }
+                break;
+            case 'u':
+                {
+                    string optarg_s = optarg;
+
+                    size_t found_port = optarg_s.find_first_of(":");
+                    if (found_port == string::npos) {
+                        throw std::invalid_argument("EDI UDP input port must be provided");
+                    }
+
+                    udp_source_t source;
+                    source.port = std::stoi(optarg_s.substr(found_port+1));
+                    std::string host_part = optarg_s.substr(0, found_port);
+
+                    size_t found_mcast = host_part.find_first_of("@"); //have multicast address:
+                    if (found_mcast != string::npos) {
+                        if (found_mcast > 0) {
+                            source.bindto = host_part.substr(0, found_mcast);
+                        }
+                        source.mcastaddr = host_part.substr(found_mcast+1);
+                    }
+                    else {
+                        source.bindto = host_part;
+                    }
+
+                    try {
+                        sources.push_back(source);
                     }
                     catch (const std::exception& e) {
                         throw runtime_error(string{"The -c or -F option "} + optarg_s + " is not valid");
@@ -305,13 +343,6 @@ int Main::start(int argc, char **argv)
         return 1;
     }
 
-    size_t num_enabled = count_if(sources.cbegin(), sources.cend(), [](const source_t& src) {
-            return src.enabled; });
-
-    if (num_enabled == 0) {
-        etiLog.level(warn) << "Starting up with zero enabled sources. Did you forget to add a -c option?";
-    }
-
     const bool zmq_output_enabled = eti_zmq_sender.is_open();
 
     if (edi_conf.destinations.empty() and not zmq_output_enabled) {
@@ -339,7 +370,6 @@ int Main::start(int argc, char **argv)
 
     receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
     for (auto& source : sources) {
-        source.receive_timeout = receive_timeout;
 
         auto tagpacket_callback = [&](tagpacket_t&& tp, Receiver* r) {
             edisender.push_tagpacket(std::move(tp), r);
@@ -348,7 +378,14 @@ int Main::start(int argc, char **argv)
         auto eti_callback = [&](eti_frame_t&& f) {
             eti_zmq_sender.encode_zmq_frame(std::move(f));
         };
-        receivers.emplace_back(source, tagpacket_callback, eti_callback, zmq_output_enabled, verbosity);
+        receivers.emplace_back(source, receive_timeout, tagpacket_callback, eti_callback, zmq_output_enabled, verbosity);
+    }
+
+    size_t num_enabled = count_if(receivers.cbegin(), receivers.cend(),
+            [](const Receiver& rx) { return rx.enabled; });
+
+    if (num_enabled == 0) {
+        etiLog.level(warn) << "Starting up with zero enabled sources. Did you forget to add a -c option?";
     }
 
 
@@ -359,9 +396,9 @@ int Main::start(int argc, char **argv)
     }
 
     etiLog.level(info) << "EDI inputs";
-    for (auto& source : sources) {
-        etiLog.level(info) << " " << source.hostname << ":" <<
-            source.port << " " << (source.enabled ? "enabled" : "disabled");
+    for (const auto& rx : receivers) {
+        etiLog.level(info) << " " << rx.source_url() << " " <<
+            (rx.enabled ? "enabled" : "disabled");
     }
 
     edisender.start(edi_conf, edisendersettings);
@@ -387,19 +424,19 @@ int Main::start(int argc, char **argv)
                         const auto now = steady_clock::now();
 
                         if (std::count_if(receivers.cbegin(), receivers.cend(),
-                                [](const Receiver& r) { return r.source.active; }) != 1) {
+                                [](const Receiver& r) { return r.active; }) != 1) {
                             etiLog.level(error) << "Switching error: more than one input active";
                         }
 
                         // Assumes only one active
                         for (auto rx = receivers.begin(); rx != receivers.end(); ++rx) {
-                            if (rx->source.active) {
+                            if (rx->active) {
                                 bool force_switch = false;
 
                                 // Changed through RC
-                                if (rx->source.active and not rx->source.enabled) {
-                                    etiLog.level(info) << "Unset " << rx->source.hostname << " active ";
-                                    rx->source.active = false;
+                                if (rx->active and not rx->enabled) {
+                                    etiLog.level(info) << "Unset " << rx->source_url() << " active ";
+                                    rx->active = false;
                                     force_switch = true;
                                 }
 
@@ -415,15 +452,15 @@ int Main::start(int argc, char **argv)
                                             rx2 = receivers.begin();
                                         }
 
-                                        if (rx2 != rx and rx2->source.enabled) {
-                                            rx->source.active = false;
-                                            rx2->source.active = true;
+                                        if (rx2 != rx and rx2->enabled) {
+                                            rx->active = false;
+                                            rx2->active = true;
                                             switched = true;
 
                                             etiLog.level(warn) << "Switching from " <<
-                                                rx->source.hostname << ":" << rx->source.port <<
+                                                rx->source_url() <<
                                                 " to " <<
-                                                rx2->source.hostname << ":" << rx2->source.port <<
+                                                rx2->source_url() <<
                                                 " because of lack of data";
                                             break;
                                         }
@@ -440,8 +477,8 @@ int Main::start(int argc, char **argv)
                     }
                     break;
                 case Mode::Merging:
-                    for (auto& source : sources) {
-                        source.active = source.enabled;
+                    for (auto& rx : receivers) {
+                        rx.active = rx.enabled;
                     }
                     break;
             }
@@ -519,12 +556,12 @@ int Main::start(int argc, char **argv)
 
 void Main::ensure_one_active()
 {
-    if (std::count_if(receivers.cbegin(), receivers.cend(), [](const Receiver& r) { return r.source.active; }) == 0) {
+    if (std::count_if(receivers.cbegin(), receivers.cend(), [](const Receiver& r) { return r.active; }) == 0) {
         // Activate the first enabled source
-        for (auto& source : sources) {
-            if (source.enabled) {
-                etiLog.level(info) << "Activating first input " << source.hostname << ":" << source.port;
-                source.active = true;
+        for (auto& rx : receivers) {
+            if (rx.enabled) {
+                etiLog.level(info) << "Activating first input " << rx.source_url();
+                rx.active = true;
                 break;
             }
         }
@@ -698,23 +735,36 @@ std::string Main::build_stats_json(bool include_settings)
     using namespace chrono;
     stringstream ss;
     ss << "{ \"inputs\": [\n";
-    for (auto it = receivers.begin(); it != receivers.end();) {
+    for (auto rx = receivers.begin(); rx != receivers.end();) {
+        const auto rx_packet_time = timepoint_to_string(rx->get_systime_last_packet());
 
-        const auto rx_packet_time = timepoint_to_string(it->get_systime_last_packet());
+        ss << "{";
 
-        ss << "{" <<
-            " \"hostname\": \"" << it->source.hostname << "\"" <<
-            ", \"port\": " << it->source.port <<
+        // Goal is to remove hostname and port once it's not used anymore
+        // Also see RC 'set input enable' command
+        if (std::holds_alternative<tcp_source_t>(rx->source)) {
+            const auto& s = std::get<tcp_source_t>(rx->source);
+            ss << " \"protocol\": \"tcp\"" <<
+                  ", \"hostname\": \"" << s.hostname << "\"" <<
+                  ", \"port\": " << s.port;
+        }
+        else {
+            ss << " \"protocol\": \"udp\"";
+        }
+
+        ss << ", \"url\": \"" << rx->source_url() << "\"";
+
+        ss <<
             ", \"last_packet_received_at\": \"" << rx_packet_time << "\"" <<
-            ", \"connection_uptime\": " << it->connection_uptime_ms() <<
-            ", \"connected\": " << (it->source.connected ? "true" : "false") <<
-            ", \"active\": " << (it->source.active ? "true" : "false") <<
-            ", \"enabled\": " << (it->source.enabled ? "true" : "false");
+            ", \"connection_uptime\": " << rx->connection_uptime_ms() <<
+            ", \"connected\": " << (rx->connected() ? "true" : "false") <<
+            ", \"active\": " << (rx->active ? "true" : "false") <<
+            ", \"enabled\": " << (rx->enabled ? "true" : "false");
 
-        const auto most_recent_connect_error = it->get_last_connection_error();
+        const auto most_recent_connect_error = rx->get_last_connection_error();
         const auto err_time = timepoint_to_string(most_recent_connect_error.timestamp);
 
-        const auto margin_stats = it->get_margin_stats();
+        const auto margin_stats = rx->get_margin_stats();
 
         ss << ", \"stats\": {" <<
             " \"margin\": {" << std::fixed <<
@@ -733,14 +783,14 @@ std::string Main::build_stats_json(bool include_settings)
 
         ss << ",  \"stdev\": " << margin_stats.stdev <<
             ",  \"num_measurements\": " << margin_stats.num_measurements <<
-            "}, \"num_late_frames\": " << it->num_late <<
-            ", \"num_connects\": " << it->source.num_connects <<
+            "}, \"num_late_frames\": " << rx->num_late <<
+            ", \"num_connects\": " << rx->num_connects() <<
             ", \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) <<
             ", \"most_recent_connect_error_timestamp\": \"" << err_time << "\"" <<
             " } }";
 
-        ++it;
-        if (it == receivers.end()) {
+        ++rx;
+        if (rx == receivers.end()) {
             ss << "\n";
         }
         else {
@@ -839,29 +889,51 @@ string Main::handle_rc_command(const string& cmd)
     else if (cmd.rfind("set input enable ", 0) == 0) {
         auto input = cmd.substr(17, cmd.size());
         bool found = false;
-        for (auto& source : sources) {
-            if (source.hostname + ":" + to_string(source.port) == input) {
-                source.enabled = true;
-                etiLog.level(info) << "RC enabling input " << input;
-                found = true;
-                break;
+        for (auto& rx : receivers) {
+            if (std::holds_alternative<tcp_source_t>(rx.source)) {
+                const auto& s = std::get<tcp_source_t>(rx.source);
+                if (s.hostname + ":" + to_string(s.port) == input) {
+                    rx.enabled = true;
+                    etiLog.level(info) << "RC enabling input " << input;
+                    found = true;
+                    break;
+                }
+            }
+            else {
+                if (rx.source_url() == input) {
+                    rx.enabled = true;
+                    etiLog.level(info) << "RC enabling input " << input;
+                    found = true;
+                    break;
+                }
             }
         }
 
         if (not found) {
-            etiLog.level(info) << "RC disable input " << input << " impossible: input not found.";
+            etiLog.level(info) << "RC enable input " << input << " impossible: input not found.";
             throw invalid_argument("Cannot find specified input");
         }
     }
     else if (cmd.rfind("set input disable ", 0) == 0) {
         auto input = cmd.substr(18, cmd.size());
         bool found = false;
-        for (auto& source : sources) {
-            if (source.hostname + ":" + to_string(source.port) == input) {
-                source.enabled = false;
-                etiLog.level(info) << "RC disabling input " << input;
-                found = true;
-                break;
+        for (auto& rx : receivers) {
+            if (std::holds_alternative<tcp_source_t>(rx.source)) {
+                const auto& s = std::get<tcp_source_t>(rx.source);
+                if (s.hostname + ":" + to_string(s.port) == input) {
+                    rx.enabled = false;
+                    etiLog.level(info) << "RC disabling input " << input;
+                    found = true;
+                    break;
+                }
+            }
+            else {
+                if (rx.source_url() == input) {
+                    rx.enabled = false;
+                    etiLog.level(info) << "RC disabling input " << input;
+                    found = true;
+                    break;
+                }
             }
         }
 
@@ -922,7 +994,6 @@ string Main::handle_rc_command(const string& cmd)
         num_poll_timeout = 0;
         for (auto& rx : receivers) {
             rx.reset_counters();
-            rx.source.reset_counters();
         }
 
         edisender.reset_counters();

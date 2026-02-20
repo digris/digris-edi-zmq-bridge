@@ -24,8 +24,6 @@
 #include <chrono>
 #include <memory>
 #include <vector>
-#include <cmath>
-#include <cstring>
 #include "receiver.h"
 #include "EDISender.h"
 #include "zmq/edi2zmq.hpp"
@@ -59,7 +57,6 @@ class Main {
         edi::configuration_t edi_conf;
         std::string startupcheck;
         std::vector<Receiver> receivers;
-        std::vector<source_t> sources;
 
         EDISenderSettings edisendersettings;
         EDISender edisender;
