@@ -115,7 +115,7 @@ class UDPSocket
         void reinit(int port, const std::string& name);
         void init_receive_multicast(int port, const std::string& local_if_addr, const std::string& mcastaddr);
 
-        void close();
+        void close(void);
         void send(UDPPacket& packet);
         void send(const std::vector<uint8_t>& data, InetAddress destination);
         void send(const std::string& data, InetAddress destination);
