@@ -247,7 +247,7 @@ void Receiver::assemble(EdiDecoder::ReceivedTagPacket&& tag_data)
 
         // STC
         for (const auto& subch : m_subchannels) {
-            eti.push_back( (subch.scid << 2) | (subch.sad & 0x300) );
+            eti.push_back( (subch.scid << 2) | ((subch.sad & 0x300) >> 8) );
             eti.push_back( subch.sad & 0xff );
             eti.push_back( (subch.tpl << 2) | ((subch.stl() & 0x300) >> 8) );
             eti.push_back( subch.stl() & 0xff );
