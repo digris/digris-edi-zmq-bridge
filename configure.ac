@@ -1,6 +1,6 @@
-# Copyright (C) 2025 Matthias P. Braendli, http://opendigitalradio.org
+# Copyright (C) 2026 Matthias P. Braendli, http://opendigitalradio.org
 AC_PREREQ([2.69])
-AC_INIT([DIGRIS-EDI-ZMQ-BRIDGE],[0.9.2],[matthias.braendli@mpb.li])
+AC_INIT([DIGRIS-EDI-ZMQ-BRIDGE],[0.10.0],[matthias.braendli@mpb.li])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CANONICAL_TARGET
