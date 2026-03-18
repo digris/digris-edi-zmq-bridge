@@ -407,15 +407,23 @@ void Receiver::tick()
         }
     }
     else {
-        if (active and not m_udp_sock_ready) {
-            const auto& s = std::get<udp_source_t>(source);
-            if (IN_MULTICAST(ntohl(inet_addr(s.mcastaddr.c_str())))) {
-                m_udp_sock.init_receive_multicast(s.port, s.bindto, s.mcastaddr);
+        if (active) {
+            if (not m_udp_sock_ready) {
+                const auto& s = std::get<udp_source_t>(source);
+                etiLog.level(debug) << "UDP reinit " << source_url();
+
+                if (IN_MULTICAST(ntohl(inet_addr(s.mcastaddr.c_str())))) {
+                    m_udp_sock.init_receive_multicast(s.port, s.bindto, s.mcastaddr);
+                }
+                else {
+                    m_udp_sock.reinit(s.port, s.bindto);
+                }
+                m_udp_sock_ready = true;
             }
-            else {
-                m_udp_sock.reinit(s.port, s.bindto);
+            else if (most_recent_rx_time + m_receive_timeout < std::chrono::steady_clock::now()) {
+                m_udp_sock.close();
+                m_udp_sock_ready = false;
             }
-            m_udp_sock_ready = true;
         }
         else if (not active and m_udp_sock_ready) {
             etiLog.level(debug) << "Stop UDP from " << source_url();
@@ -492,7 +500,6 @@ void Receiver::receive()
 
 void Receiver::receive_udp()
 {
-    bool success = false;
     try {
         auto p = m_udp_sock.receive(2048);
         if (not p.buffer.empty()) {
@@ -506,21 +513,11 @@ void Receiver::receive_udp()
             using namespace std::chrono;
             most_recent_rx_systime = system_clock::now();
             most_recent_rx_time = steady_clock::now();
-            success = true;
         }
     }
     catch (const std::runtime_error& e)
     {
         etiLog.level(error) << "UDP receive " << source_url() << " error: " << strerror(errno);
-    }
-
-    if (not success) {
-        reconnect_at = std::chrono::steady_clock::now() + RECONNECT_DELAY;
-        m_udp_sock_ready = true;
-    }
-    else {
-        reconnected_at = std::chrono::steady_clock::now();
-        m_udp_sock_ready = false;
     }
 }
 
