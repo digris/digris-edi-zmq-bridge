@@ -297,7 +297,7 @@ int Main::start(int argc, char **argv)
                     EdiDecoder::Packet p;
                     p.buf = std::move(deframed);
                     p.received_on_port = 0;
-                    edi_rx.push_packet(p);
+                    edi_rx.push_packet(std::move(p));
                 }
             }
             else if (std::holds_alternative<GSEDeframer>(deframer)) {
@@ -311,7 +311,7 @@ int Main::start(int argc, char **argv)
                     EdiDecoder::Packet p;
                     p.buf = std::move(deframed);
                     p.received_on_port = 0;
-                    edi_rx.push_packet(p);
+                    edi_rx.push_packet(std::move(p));
                 }
             }
             else {
@@ -319,7 +319,7 @@ int Main::start(int argc, char **argv)
                     EdiDecoder::Packet p;
                     p.buf = std::move(rp.packetdata);
                     p.received_on_port = rp.port_received_on;
-                    edi_rx.push_packet(p);
+                    edi_rx.push_packet(std::move(p));
                 }
             }
 

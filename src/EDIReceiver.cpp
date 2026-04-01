@@ -50,9 +50,9 @@ void EDIReceiver::set_verbose(bool verbose)
 }
 
 
-void EDIReceiver::push_packet(Packet &pack)
+void EDIReceiver::push_packet(Packet&& pack)
 {
-    m_dispatcher.push_packet(pack);
+    m_dispatcher.push_packet(std::move(pack));
 }
 
 void EDIReceiver::setMaxDelay(int num_af_packets)

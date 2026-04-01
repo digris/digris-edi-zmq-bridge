@@ -508,7 +508,7 @@ void Receiver::receive_udp()
                 m_edi_decoder = std::make_shared<EdiDecoder::ETIDecoder>(*this);
                 m_edi_decoder->set_verbose(m_verbosity > 1);
             }
-            m_edi_decoder->push_packet(packet);
+            m_edi_decoder->push_packet(std::move(packet));
 
             using namespace std::chrono;
             most_recent_rx_systime = system_clock::now();
