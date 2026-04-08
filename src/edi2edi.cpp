@@ -396,6 +396,10 @@ int Main::start(int argc, char **argv)
         }
     }
 
+    if (unique_id.empty() and stats_sender.has_value()) {
+        etiLog.level(warn) << "UDP Stats Sender enabled without unique id!";
+    }
+
     receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
     for (auto& source : sources) {
 
@@ -859,6 +863,16 @@ std::string Main::build_stats_json(bool include_settings) const
         json::map_t tcp_stats_map;
         tcp_stats_map["listen_port"] = tcp_stats.listen_port;
         tcp_stats_map["num_connections"] = tcp_stats.stats.size();
+
+        std::vector<json::value_t> tcp_conn_vec;
+        for (const auto& tcp_conn : tcp_stats.stats) {
+            json::map_t tcp_conn_map;
+            tcp_conn_map["remote_address"] = tcp_conn.remote_address.to_string();
+            tcp_conn_map["buffer_fullness"] = tcp_conn.buffer_fullness;
+            tcp_conn_vec.emplace_back(std::move(tcp_conn_map));
+        }
+        tcp_stats_map["connections"] = tcp_conn_vec;
+
         tcp_stats_vec.emplace_back(std::move(tcp_stats_map));
     }
     output_map["tcp_stats"] = tcp_stats_vec;
@@ -882,6 +896,33 @@ std::string Main::build_stats_json(bool include_settings) const
             case Mode::Merging:
                 settings_map["mode"] = "merging";
                 break;
+        }
+
+        if (edi_conf.enabled()) {
+            std::vector<json::value_t> edi_settings_vec;
+            for (const auto& edi_dest : edi_conf.destinations) {
+                json::map_t edi_settings_map;
+
+                if (auto udp_dest = dynamic_pointer_cast<edi::udp_destination_t>(edi_dest)) {
+                    edi_settings_map["protocol"] = "udp";
+                    edi_settings_map["dest_addr"] = udp_dest->dest_addr;
+                    edi_settings_map["dest_port"] = udp_dest->dest_port;
+                    edi_settings_map["source_addr"] = udp_dest->source_addr;
+                    edi_settings_map["source_port"] = udp_dest->source_port;
+                    edi_settings_map["ttl"] = udp_dest->ttl;
+                }
+                else if (auto tcp_dest = dynamic_pointer_cast<edi::tcp_server_t>(edi_dest)) {
+                    edi_settings_map["protocol"] = "tcp";
+                    edi_settings_map["listen_port"] = tcp_dest->listen_port;
+                    edi_settings_map["max_frames_queued"] = tcp_dest->max_frames_queued;
+                }
+                // we have no edi::tcp_client_t here
+                else {
+                    throw logic_error("EDI destination not implemented");
+                }
+                edi_settings_vec.emplace_back(std::move(edi_settings_map));
+            }
+            settings_map["outputs"] = edi_settings_vec;
         }
 
         root_map["settings"] = settings_map;
