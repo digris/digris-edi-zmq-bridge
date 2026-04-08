@@ -80,6 +80,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         Receiver operator=(const Receiver&) = delete;
         Receiver(Receiver&&) = default;
         Receiver& operator=(Receiver&&) = delete;
+        virtual ~Receiver() { }
 
         // Tell the ETIWriter what EDI protocol we receive in *ptr.
         // This is not part of the ETI data, but is used as check

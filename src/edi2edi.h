@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2025
+   Copyright (C) 2026
    Matthias P. Braendli, matthias.braendli@mpb.li
 
     http://www.opendigitalradio.org
@@ -21,13 +21,16 @@
    along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#pragma once
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <vector>
 #include "receiver.h"
 #include "EDISender.h"
 #include "zmq/edi2zmq.hpp"
 #include "webserver.h"
+#include "StatsSender.h"
 
 constexpr long DEFAULT_SWITCH_DELAY = 2000;
 
@@ -44,7 +47,7 @@ class Main {
         void init_rc();
         bool handle_rc_request();
         std::string handle_rc_command(const std::string& cmd);
-        std::string build_stats_json(bool include_settings);
+        std::string build_stats_json(bool include_settings) const;
 
         std::shared_ptr<edi::udp_destination_t> edi_udp_dest;
         edi::pft_settings_t pft_settings = {};
@@ -87,7 +90,9 @@ class Main {
 
         uint64_t num_poll_timeout = 0;
 
+        std::string unique_id;
         std::optional<WebServer> webserver;
+        std::optional<StatsSender> stats_sender;
         std::chrono::steady_clock::time_point last_stats_update_time =
             std::chrono::steady_clock::now();
 };

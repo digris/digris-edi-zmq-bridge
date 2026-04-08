@@ -37,11 +37,13 @@ libedi2edi_a_CFLAGS   = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
 libedi2edi_a_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
 libedi2edi_a_SOURCES  = src/receiver.h src/receiver.cpp \
 						src/EDISender.h src/EDISender.cpp \
+						src/StatsSender.h src/StatsSender.cpp \
 						src/zmq/edi2zmq.hpp src/zmq/edi2zmq.cpp \
 						src/zmq/metadata.h src/zmq/metadata.cpp \
 						src/zmq/dabOutputZMQ.h src/zmq/dabOutputZMQ.cpp \
 						lib/crc.h lib/crc.c \
 						lib/Globals.cpp \
+						lib/Json.h lib/Json.cpp \
 						lib/Log.h lib/Log.cpp \
 						lib/ReedSolomon.h lib/ReedSolomon.cpp \
 						lib/Socket.h lib/Socket.cpp \

@@ -40,6 +40,7 @@
 #include "Log.h"
 #include "common.h"
 #include "edi2edi.h"
+#include "Json.h"
 
 using namespace std;
 
@@ -77,7 +78,9 @@ static void usage()
     cerr << " --receive-timeout <ms>    Reconnect the source socket after N ms of no data (default " <<
         duration_cast<milliseconds>(DEFAULT_RECEIVE_TIMEOUT).count() << "ms)\n";
     cerr << " -r <socket_path>          Enable UNIX DGRAM remote control socket and bind to given path\n";
+    cerr << " --id <UNIQUE_ID>          Unique identifier to use for stats\n";
     cerr << " --http <IP:PORT>          Enable HTTP Server listening on given IP:PORT\n";
+    cerr << " --udp-stats <IP:PORT>     Send UDP json stats over UDP to IP:PORT\n";
     cerr << " --version                 Show the version and quit.\n\n";
 
     cerr << "The following options can be given several times:\n";
@@ -116,10 +119,12 @@ static const struct option longopts[] = {
     {"switch-delay", required_argument, 0, 1},
     {"live-stats-port", required_argument, 0, 2},
     {"http", required_argument, 0, 3},
+    {"udp-stats", required_argument, 0, 4},
     {"align", required_argument, 0, 5},
     {"no-drop-late", no_argument, 0, 6},
     {"preroll-burst", required_argument, 0, 7},
     {"receive-timeout", required_argument, 0, 8},
+    {"id", required_argument, 0, 9},
     {0, 0, 0, 0}
 };
 
@@ -181,6 +186,26 @@ int Main::start(int argc, char **argv)
                             all_args.str());
                 }
                 break;
+            case 4: // --udp-stats
+                {
+                    stringstream all_args;
+                    for (int i = 0; i < argc; i++) {
+                        if (i > 0) all_args << " ";
+                        all_args << argv[i];
+                    }
+
+                    string optarg_s = optarg;
+                    const auto pos_colon = optarg_s.find(":");
+                    if (pos_colon == string::npos or pos_colon == 0) {
+                        etiLog.level(error) << "--udp-stats argument does not contain host:port";
+                        return 1;
+                    }
+
+                    stats_sender.emplace(
+                            optarg_s.substr(0, pos_colon),
+                            stoi(optarg_s.substr(pos_colon+1)));
+                }
+                break;
             case 5: // --align
                 edi_conf.tagpacket_alignment = stoi(optarg);
                 break;
@@ -192,6 +217,9 @@ int Main::start(int argc, char **argv)
                 break;
             case 8: // --receive-timeout in milliseconds
                 receive_timeout = std::chrono::milliseconds(stoi(optarg));
+                break;
+            case 9: // --id
+                unique_id = optarg;
                 break;
             case 'm':
                 if (strcmp(optarg, "switch") == 0) {
@@ -533,11 +561,18 @@ int Main::start(int argc, char **argv)
                 num_poll_timeout += POLL_TIMEOUT_FRAMES;
             }
 
-            if (webserver.has_value()) {
+            if (webserver.has_value() || stats_sender.has_value()) {
                 using namespace std::chrono;
                 if (last_stats_update_time + seconds(1) < steady_clock::now()) {
                     last_stats_update_time += seconds(1);
-                    webserver->update_stats_json(build_stats_json(true));
+
+                    auto stats = build_stats_json(true);
+
+                    if (webserver.has_value())
+                        webserver->update_stats_json(stats);
+
+                    if (stats_sender.has_value())
+                        stats_sender->send_stats_json(stats);
                 }
             }
         } while (running);
@@ -730,128 +765,129 @@ bool Main::handle_rc_request()
     }
 }
 
-std::string Main::build_stats_json(bool include_settings)
+std::string Main::build_stats_json(bool include_settings) const
 {
     using namespace chrono;
-    stringstream ss;
-    ss << "{ \"inputs\": [\n";
-    for (auto rx = receivers.begin(); rx != receivers.end();) {
-        const auto rx_packet_time = timepoint_to_string(rx->get_systime_last_packet());
 
-        ss << "{";
+    json::map_t root_map;
+
+    std::vector<json::value_t> inputs_vec;
+    for (const auto& rx : receivers) {
+        json::map_t input;
+
+        const auto rx_packet_time = timepoint_to_string(rx.get_systime_last_packet());
 
         // Goal is to remove hostname and port once it's not used anymore
         // Also see RC 'set input enable' command
-        if (std::holds_alternative<tcp_source_t>(rx->source)) {
-            const auto& s = std::get<tcp_source_t>(rx->source);
-            ss << " \"protocol\": \"tcp\"" <<
-                  ", \"hostname\": \"" << s.hostname << "\"" <<
-                  ", \"port\": " << s.port;
+        if (std::holds_alternative<tcp_source_t>(rx.source)) {
+            const auto& s = std::get<tcp_source_t>(rx.source);
+            input["protocol"] = "tcp";
+            input["hostname"] = s.hostname;
+            input["port"] = s.port;
         }
         else {
-            ss << " \"protocol\": \"udp\"";
+            input["protocol"] = "udp";
         }
 
-        ss << ", \"url\": \"" << rx->source_url() << "\"";
+        input["url"] = rx.source_url();
 
-        ss <<
-            ", \"last_packet_received_at\": \"" << rx_packet_time << "\"" <<
-            ", \"connection_uptime\": " << rx->connection_uptime_ms() <<
-            ", \"connected\": " << (rx->connected() ? "true" : "false") <<
-            ", \"active\": " << (rx->active ? "true" : "false") <<
-            ", \"enabled\": " << (rx->enabled ? "true" : "false");
+        input["last_packet_received_at"] = rx_packet_time;
+        input["connection_uptime"] = rx.connection_uptime_ms();
+        input["connected"] = rx.connected();
+        input["active"] = rx.active;
+        input["enabled"] = rx.enabled;
 
-        const auto most_recent_connect_error = rx->get_last_connection_error();
+        const auto most_recent_connect_error = rx.get_last_connection_error();
         const auto err_time = timepoint_to_string(most_recent_connect_error.timestamp);
 
-        const auto margin_stats = rx->get_margin_stats();
+        const auto margin_stats = rx.get_margin_stats();
 
-        ss << ", \"stats\": {" <<
-            " \"margin\": {" << std::fixed <<
-            "   \"mean\": " << margin_stats.mean <<
-            ",  \"min\": " << margin_stats.min <<
-            ",  \"max\": " << margin_stats.max;
+        json::map_t stats_map;
+        json::map_t margin_map;
+
+        margin_map["mean"] = margin_stats.mean;
+        margin_map["min"] = margin_stats.min;
+        margin_map["max"] = margin_stats.max;
+
 
         if (edisendersettings.delay_ms.has_value()) {
-            ss << ",  \"mean_to_delivery\": " << margin_stats.mean + *edisendersettings.delay_ms <<
-                ",  \"min_to_delivery\": " << margin_stats.min + *edisendersettings.delay_ms <<
-                ",  \"max_to_delivery\": " << margin_stats.max + *edisendersettings.delay_ms;
+            margin_map["mean_to_delivery"] = margin_stats.mean + *edisendersettings.delay_ms;
+            margin_map["min_to_delivery"] = margin_stats.min + *edisendersettings.delay_ms;
+            margin_map["max_to_delivery"] = margin_stats.max + *edisendersettings.delay_ms;
         }
         else {
-            ss << ", \"mean_to_delivery\": null, \"min_to_delivery\": null, \"max_to_delivery\": null";
+            margin_map["mean_to_delivery"] = std::nullopt;
+            margin_map["min_to_delivery"] = std::nullopt;
+            margin_map["max_to_delivery"] = std::nullopt;
         }
 
-        ss << ",  \"stdev\": " << margin_stats.stdev <<
-            ",  \"num_measurements\": " << margin_stats.num_measurements <<
-            "}, \"num_late_frames\": " << rx->num_late <<
-            ", \"num_connects\": " << rx->num_connects() <<
-            ", \"most_recent_connect_error\": " << std::quoted(most_recent_connect_error.message) <<
-            ", \"most_recent_connect_error_timestamp\": \"" << err_time << "\"" <<
-            " } }";
+        margin_map["stdev"] = margin_stats.stdev;
+        margin_map["num_measurements"] =margin_stats.num_measurements;
 
-        ++rx;
-        if (rx == receivers.end()) {
-            ss << "\n";
-        }
-        else {
-            ss << ",\n";
-        }
+        stats_map["margin"] = margin_map;
+
+        stats_map["num_late_frames"] = rx.num_late;
+        stats_map["num_connects"] = rx.num_connects();
+        stats_map["most_recent_connect_error"] = most_recent_connect_error.message;
+        stats_map["most_recent_connect_error_timestamp"] = err_time;
+        input["stats"] = stats_map;
+
+        inputs_vec.emplace_back(std::move(input));
     }
-    ss << "],\n";
+    root_map["inputs"] = inputs_vec;
 
-    ss << " \"main\": {" <<
-        "\"poll_timeouts\": " << num_poll_timeout <<
-        ", \"process_uptime\": " <<
-        duration_cast<milliseconds>(steady_clock::now() - startup_time).count() <<
-        " },";
+    json::map_t main_map;
+    main_map["unique_id"] = unique_id;
+    main_map["poll_timeouts"] = num_poll_timeout;
+    main_map["process_uptime"] = duration_cast<milliseconds>(
+            steady_clock::now() - startup_time).count();
+    root_map["main"] = main_map;
 
     const auto backoff_remain = edisender.backoff_milliseconds_remaining();
 
-    ss << " \"output\": {"
-        " \"num_frames\": " << edisender.get_frame_count() <<
-        ", \"late_score\": " << edisender.get_late_score() <<
-        ", \"num_dlfc_discontinuities\": " << edisender.get_num_dlfc_discontinuities() <<
-        ", \"num_queue_overruns\": " << edisender.get_num_queue_overruns() <<
-        ", \"num_dropped_frames\": " << edisender.get_num_dropped() <<
-        ", \"backoff_remain_ms\": " << backoff_remain <<
-        ", \"in_backoff\": " << (backoff_remain > 0 ? "true" : "false") <<
-        ", \"tcp_stats\": [";
+    json::map_t output_map;
+    output_map["num_frames"] = edisender.get_frame_count();
+    output_map["late_score"] = edisender.get_late_score();
+    output_map["num_dlfc_discontinuities"] = edisender.get_num_dlfc_discontinuities();
+    output_map["num_queue_overruns"] = edisender.get_num_queue_overruns();
+    output_map["num_dropped_frames"] = edisender.get_num_dropped();
+    output_map["backoff_remain_ms"] = backoff_remain;
+    output_map["in_backoff"] = backoff_remain;
 
-    const auto tcp_stats = edisender.get_tcp_stats();
-    for (auto it = tcp_stats.begin(); it != tcp_stats.end(); ++it) {
-        if (it != tcp_stats.begin()) {
-            ss << ",";
-        }
-        ss << " { \"listen_port\": " << it->listen_port <<
-            ", \"num_connections\": " << it->stats.size() << "} ";
+    std::vector<json::value_t> tcp_stats_vec;
+    for (const auto& tcp_stats : edisender.get_tcp_stats()) {
+        json::map_t tcp_stats_map;
+        tcp_stats_map["listen_port"] = tcp_stats.listen_port;
+        tcp_stats_map["num_connections"] = tcp_stats.stats.size();
+        tcp_stats_vec.emplace_back(std::move(tcp_stats_map));
     }
-
-    ss << " ] } ";
+    output_map["tcp_stats"] = tcp_stats_vec;
+    root_map["output"] = output_map;
 
     if (include_settings) {
-        ss << ", \"settings\": { \"delay\": ";
-        if (edisendersettings.delay_ms.has_value()) {
-            ss << *edisendersettings.delay_ms;
-        }
-        else {
-            ss << "null";
-        }
-        ss <<
-            ", \"backoff\": " << duration_cast<milliseconds>(edisendersettings.backoff).count() <<
-            ", \"live_stats_port\": " << edisendersettings.live_stats_port <<
-            ", \"verbosity\": " << verbosity <<
-            ", \"mode\": \"";
+        json::map_t settings_map;
+
+        settings_map["delay"] = edisendersettings.delay_ms;
+
+        settings_map["backoff"] = duration_cast<milliseconds>(
+                edisendersettings.backoff).count();
+
+        settings_map["live_stats_port"] = edisendersettings.live_stats_port;
+        settings_map["verbosity"] = verbosity;
 
         switch (mode) {
-            case Mode::Switching: ss << "switching"; break;
-            case Mode::Merging: ss << "merging"; break;
+            case Mode::Switching:
+                settings_map["mode"] = "switching";
+                break;
+            case Mode::Merging:
+                settings_map["mode"] = "merging";
+                break;
         }
 
-        ss << "\" }";
+        root_map["settings"] = settings_map;
     }
 
-    ss << " }";
-    return ss.str();
+    return json::map_to_json(root_map);
 }
 
 string Main::handle_rc_command(const string& cmd)
