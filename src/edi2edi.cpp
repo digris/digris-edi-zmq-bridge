@@ -841,6 +841,7 @@ std::string Main::build_stats_json(bool include_settings) const
     root_map["inputs"] = inputs_vec;
 
     json::map_t main_map;
+    main_map["version"] = VERSION;
     main_map["unique_id"] = unique_id;
     main_map["poll_timeouts"] = num_poll_timeout;
     main_map["process_uptime"] = duration_cast<milliseconds>(
