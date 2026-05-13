@@ -525,10 +525,10 @@ void Receiver::receive_tcp()
 {
     using namespace std::chrono;
 
-    const size_t bufsize = 32;
-    std::vector<uint8_t> buf(bufsize);
+    constexpr size_t bufsize = 256;
+    m_tcp_rx_buf.resize(bufsize);
     bool success = false;
-    ssize_t ret = ::recv(get_sockfd(), buf.data(), buf.size(), 0);
+    ssize_t ret = ::recv(get_sockfd(), m_tcp_rx_buf.data(), m_tcp_rx_buf.size(), 0);
     if (ret == -1) {
         if (errno == EINTR) {
             success = false;
@@ -545,13 +545,13 @@ void Receiver::receive_tcp()
         }
     }
     else if (ret > 0) {
-        buf.resize(ret);
+        m_tcp_rx_buf.resize(ret);
         if (!m_edi_decoder) {
             m_edi_decoder = std::make_shared<EdiDecoder::ETIDecoder>(*this);
             m_edi_decoder->set_verbose(m_verbosity > 1);
         }
 
-        m_edi_decoder->push_bytes(buf);
+        m_edi_decoder->push_bytes(m_tcp_rx_buf);
         success = true;
     }
     // ret == 0 means disconnected

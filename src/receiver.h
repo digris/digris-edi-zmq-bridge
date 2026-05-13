@@ -204,6 +204,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         };
         tcp_sock_state_e m_tcp_sock_state = tcp_sock_state_e::DISABLED;
         Socket::TCPSocket m_tcp_sock;
+        std::vector<uint8_t> m_tcp_rx_buf;
 
         bool m_udp_sock_ready = false;
         Socket::UDPSocket m_udp_sock;
