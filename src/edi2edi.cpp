@@ -538,7 +538,7 @@ int Main::start(int argc, char **argv)
                 num_fds++;
             }
 
-            constexpr int POLL_TIMEOUT_FRAMES = 10;
+            constexpr int POLL_TIMEOUT_FRAMES = 2;
             int retval = poll(fds, num_fds, 24 * POLL_TIMEOUT_FRAMES);
 
             if (retval == -1 and errno == EINTR) {
@@ -826,7 +826,7 @@ std::string Main::build_stats_json(bool include_settings) const
         }
 
         margin_map["stdev"] = margin_stats.stdev;
-        margin_map["num_measurements"] =margin_stats.num_measurements;
+        margin_map["num_measurements"] = margin_stats.num_measurements;
 
         stats_map["margin"] = margin_map;
 
