@@ -140,8 +140,10 @@ class Receiver : public EdiDecoder::ETIDataCollector {
             return m_most_recent_connect_error;
         }
 
-        void reset_counters() { num_late = 0; m_num_connects = 0; }
+        void reset_counters();
         size_t num_connects() const { return m_num_connects; }
+        size_t num_disconnects() const { return m_num_disconnects; }
+        size_t num_timeouts() const { return m_num_timeouts; }
 
         source_t source;
 
@@ -174,6 +176,9 @@ class Receiver : public EdiDecoder::ETIDataCollector {
 
 
         uint64_t m_num_connects = 0;
+        uint64_t m_num_timeouts = 0;
+        uint64_t m_num_disconnects = 0;
+
         bool m_fc_valid = false;
         EdiDecoder::eti_fc_data m_fc;
         bool m_proto_valid = false;

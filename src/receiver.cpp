@@ -381,12 +381,14 @@ void Receiver::tick()
                     if (reconnect_at < std::chrono::steady_clock::now()) {
                         etiLog.level(info) << "Timeout during reconnect on TCP " <<
                             s.hostname << ":" << s.port;
+                        m_num_timeouts++;
                         do_reconnect();
                     }
                     break;
                 case tcp_sock_state_e::CONNECTED:
                     if (most_recent_rx_time + m_receive_timeout < std::chrono::steady_clock::now()) {
                         etiLog.level(info) << "Timeout on TCP " << s.hostname << ":" << s.port;
+                        m_num_timeouts++;
                         do_reconnect();
                     }
                     break;
@@ -558,6 +560,7 @@ void Receiver::receive_tcp()
 
     if (not success) {
         etiLog.level(debug) << "Remote " << source_url() << " closed connection";
+        m_num_disconnects++;
         m_tcp_sock.close();
         m_edi_decoder.reset();
         m_tcp_sock_state = tcp_sock_state_e::DISABLED;
@@ -573,6 +576,14 @@ void Receiver::receive_tcp()
         }
         m_tcp_sock_state = tcp_sock_state_e::CONNECTED;
     }
+}
+
+void Receiver::reset_counters()
+{
+    num_late = 0;
+    m_num_connects = 0;
+    m_num_timeouts = 0;
+    m_num_disconnects = 0;
 }
 
 void Receiver::set_verbosity(int verbosity)

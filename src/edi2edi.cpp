@@ -832,6 +832,8 @@ std::string Main::build_stats_json(bool include_settings) const
 
         stats_map["num_late_frames"] = rx.num_late;
         stats_map["num_connects"] = rx.num_connects();
+        stats_map["num_disconnects"] = rx.num_disconnects();
+        stats_map["num_timeouts"] = rx.num_timeouts();
         stats_map["most_recent_connect_error"] = most_recent_connect_error.message;
         stats_map["most_recent_connect_error_timestamp"] = err_time;
         input["stats"] = stats_map;
