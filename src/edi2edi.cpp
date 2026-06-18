@@ -936,6 +936,23 @@ std::string Main::build_stats_json(bool include_settings) const
             settings_map["outputs"] = edi_settings_vec;
         }
 
+        std::vector<json::value_t> inputs_vec;
+        for (const auto& rx : receivers) {
+            json::map_t input_map;
+            if (std::holds_alternative<tcp_source_t>(rx.source)) {
+                const auto& s = std::get<tcp_source_t>(rx.source);
+                input_map["protocol"] = "tcp";
+                input_map["input"] = s.original_cmdline_arg;
+            }
+            else if (std::holds_alternative<udp_source_t>(rx.source)) {
+                const auto& s = std::get<udp_source_t>(rx.source);
+                input_map["protocol"] = "udp";
+                input_map["input"] = s.original_cmdline_arg;
+            }
+            inputs_vec.emplace_back(std::move(input_map));
+        }
+        settings_map["inputs"] = inputs_vec;
+
         root_map["settings"] = settings_map;
     }
 
