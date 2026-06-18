@@ -486,7 +486,9 @@ bool Receiver::connected() const
         return m_tcp_sock_state == tcp_sock_state_e::CONNECTED;
     }
     else {
-        return m_udp_sock_ready;
+        const bool has_recently_received_data =
+            (most_recent_rx_time + m_receive_timeout >= std::chrono::steady_clock::now());
+        return m_udp_sock_ready and has_recently_received_data;
     }
 }
 
@@ -514,7 +516,7 @@ void Receiver::receive_udp()
 
             using namespace std::chrono;
             most_recent_rx_systime = system_clock::now();
-            most_recent_rx_time = steady_clock::now();
+            reconnected_at = most_recent_rx_time = steady_clock::now();
         }
     }
     catch (const std::runtime_error& e)
