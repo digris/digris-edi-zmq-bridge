@@ -412,7 +412,6 @@ void Receiver::tick()
         if (active) {
             if (not m_udp_sock_ready) {
                 const auto& s = std::get<udp_source_t>(source);
-                etiLog.level(debug) << "UDP reinit " << source_url();
 
                 if (IN_MULTICAST(ntohl(inet_addr(s.mcastaddr.c_str())))) {
                     m_udp_sock.init_receive_multicast(s.port, s.bindto, s.mcastaddr);
@@ -425,12 +424,14 @@ void Receiver::tick()
             else if (most_recent_rx_time + m_receive_timeout < std::chrono::steady_clock::now()) {
                 m_udp_sock.close();
                 m_udp_sock_ready = false;
+                reconnected_at = std::nullopt;
             }
         }
         else if (not active and m_udp_sock_ready) {
             etiLog.level(debug) << "Stop UDP from " << source_url();
             m_udp_sock.close();
             m_udp_sock_ready = false;
+            reconnected_at = std::nullopt;
             m_edi_decoder.reset();
         }
     }
@@ -492,6 +493,17 @@ bool Receiver::connected() const
     }
 }
 
+uint64_t Receiver::connection_uptime_ms() const
+{
+    using namespace std::chrono;
+    if (reconnected_at.has_value()) {
+        return duration_cast<milliseconds>(steady_clock::now() - *reconnected_at).count();
+    }
+    else {
+        return 0;
+    }
+}
+
 void Receiver::receive()
 {
     if (std::holds_alternative<tcp_source_t>(source)) {
@@ -516,7 +528,10 @@ void Receiver::receive_udp()
 
             using namespace std::chrono;
             most_recent_rx_systime = system_clock::now();
-            reconnected_at = most_recent_rx_time = steady_clock::now();
+            most_recent_rx_time = steady_clock::now();
+            if (!reconnected_at.has_value()) {
+                reconnected_at = most_recent_rx_time;
+            }
         }
     }
     catch (const std::runtime_error& e)
@@ -566,6 +581,7 @@ void Receiver::receive_tcp()
         m_tcp_sock.close();
         m_edi_decoder.reset();
         m_tcp_sock_state = tcp_sock_state_e::DISABLED;
+        reconnected_at = std::nullopt;
         reconnect_at = steady_clock::now() + RECONNECT_DELAY;
     }
     else {
