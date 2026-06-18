@@ -246,7 +246,11 @@ int Main::start(int argc, char **argv)
                     const bool enabled = ch == 'c';
                     try {
                         tcp_source_t source {
-                            enabled, optarg_s.substr(0, pos_colon), stoi(optarg_s.substr(pos_colon+1)) };
+                            enabled,
+                            optarg_s.substr(0, pos_colon),
+                            stoi(optarg_s.substr(pos_colon+1)),
+                            optarg_s
+                        };
 
                         sources.push_back(source);
                     }
@@ -265,6 +269,7 @@ int Main::start(int argc, char **argv)
                     }
 
                     udp_source_t source;
+                    source.original_cmdline_arg = optarg_s;
                     source.port = std::stoi(optarg_s.substr(found_port+1));
                     std::string host_part = optarg_s.substr(0, found_port);
 
@@ -788,9 +793,12 @@ std::string Main::build_stats_json(bool include_settings) const
             input["protocol"] = "tcp";
             input["hostname"] = s.hostname;
             input["port"] = s.port;
+            input["input"] = s.original_cmdline_arg;
         }
-        else {
+        else if (std::holds_alternative<udp_source_t>(rx.source)) {
+            const auto& s = std::get<udp_source_t>(rx.source);
             input["protocol"] = "udp";
+            input["input"] = s.original_cmdline_arg;
         }
 
         input["url"] = rx.source_url();

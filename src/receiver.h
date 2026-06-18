@@ -48,6 +48,8 @@ struct tcp_source_t {
     bool enabled_at_startup = true;
     std::string hostname;
     int port;
+
+    std::string original_cmdline_arg;
 };
 
 struct udp_source_t {
@@ -55,6 +57,8 @@ struct udp_source_t {
     std::string bindto = "0.0.0.0";
     std::string mcastaddr;
     int port;
+
+    std::string original_cmdline_arg;
 };
 
 using source_t = std::variant<tcp_source_t, udp_source_t>;
