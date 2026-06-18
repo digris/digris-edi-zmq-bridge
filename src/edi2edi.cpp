@@ -902,10 +902,10 @@ std::string Main::build_stats_json(bool include_settings) const
 
         switch (mode) {
             case Mode::Switching:
-                settings_map["mode"] = "switching";
+                settings_map["mode"] = "switch";
                 break;
             case Mode::Merging:
-                settings_map["mode"] = "merging";
+                settings_map["mode"] = "merge";
                 break;
         }
 
@@ -964,8 +964,8 @@ string Main::handle_rc_command(const string& cmd)
             ", \"mode\": \"";
 
         switch (mode) {
-            case Mode::Switching: ss << "switching"; break;
-            case Mode::Merging: ss << "merging"; break;
+            case Mode::Switching: ss << "switch"; break;
+            case Mode::Merging: ss << "merge"; break;
         }
 
         ss << "\" }";
