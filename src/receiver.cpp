@@ -550,7 +550,6 @@ void Receiver::receive_tcp()
     ssize_t ret = ::recv(get_sockfd(), m_tcp_rx_buf.data(), m_tcp_rx_buf.size(), 0);
     if (ret == -1) {
         if (errno == EINTR) {
-            success = false;
         }
         else if (errno == ECONNREFUSED) {
             // Behave as if disconnected
@@ -560,7 +559,6 @@ void Receiver::receive_tcp()
         }
         else {
             etiLog.level(error) << "TCP receive " << source_url() << " error: " << strerror(errno);
-            success = false;
         }
     }
     else if (ret > 0) {
@@ -576,7 +574,9 @@ void Receiver::receive_tcp()
     // ret == 0 means disconnected
 
     if (not success) {
-        etiLog.level(debug) << "Remote " << source_url() << " closed connection";
+        if (m_verbosity > 0) {
+            etiLog.level(debug) << "Remote " << source_url() << " closed connection";
+        }
         m_num_disconnects++;
         m_tcp_sock.close();
         m_edi_decoder.reset();
