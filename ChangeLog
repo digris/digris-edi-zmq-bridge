@@ -1,6 +1,10 @@
 This file contains information about the changes done to
 the tools in this repository
 
+2026-06-25: Matthias P. Braendli <matthias@mpb.li>
+	(v0.11.0):
+		Improve performance, HTTP stats, connection handling.
+
 2026-03-11: Matthias P. Braendli <matthias@mpb.li>
 	(v0.10.0):
 		Add UDP input merge/switch.
