@@ -893,6 +893,12 @@ std::string Main::build_stats_json(bool include_settings) const
         json::map_t settings_map;
 
         settings_map["delay"] = edisendersettings.delay_ms;
+        settings_map["switch-delay"] = duration_cast<milliseconds>(
+            switch_delay).count();
+
+        settings_map["preroll-burst"] = preroll_burst_ms;
+        settings_map["receive-timeout"] = duration_cast<milliseconds>(
+                receive_timeout).count();
 
         settings_map["backoff"] = duration_cast<milliseconds>(
                 edisendersettings.backoff).count();
