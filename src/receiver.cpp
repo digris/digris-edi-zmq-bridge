@@ -357,7 +357,6 @@ void Receiver::tick()
                     etiLog.level(debug) << "Attempt connect to " << s.hostname << ":" << s.port;
                 }
                 m_tcp_sock.connect(s.hostname, s.port, /*nonblock*/ true);
-                m_tcp_sock_state = tcp_sock_state_e::CONNECTING;
             }
             catch (const std::runtime_error& e) {
                 if (m_verbosity > 0) {
@@ -368,8 +367,9 @@ void Receiver::tick()
                 m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
             }
 
-            // Mark connected = true only on successful data receive because of nonblock=true
-            reconnect_at += RECONNECT_DELAY;
+            m_tcp_sock_state = tcp_sock_state_e::CONNECTING;
+            // Set state to CONNECTED only on successful data receive because of nonblock=true
+            reconnect_at = std::chrono::steady_clock::now() + RECONNECT_DELAY;
         };
 
         if (active) {
@@ -434,6 +434,21 @@ void Receiver::tick()
             reconnected_at = std::nullopt;
             m_edi_decoder.reset();
         }
+    }
+}
+
+void Receiver::disconnect()
+{
+    if (std::holds_alternative<tcp_source_t>(source)) {
+        const auto& s = std::get<tcp_source_t>(source);
+        if (m_verbosity > 0) {
+            etiLog.level(debug) << "Remote " << s.hostname << ":" << s.port <<
+                " closed connection, or connection establish failed.";
+        }
+
+        m_tcp_sock.close();
+        m_edi_decoder.reset();
+        reconnect_at = std::chrono::steady_clock::now() + RECONNECT_DELAY;
     }
 }
 

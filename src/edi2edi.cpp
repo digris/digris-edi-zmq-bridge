@@ -564,6 +564,11 @@ int Main::start(int argc, char **argv)
                             sockfd_to_receiver.at(fds[i].fd)->receive();
                         }
                     }
+                    else { /* POLLERR and POLLHUP can happen even when connection setup fails, or the remote disconnects. */
+                        if (rc_socket != 1 and fds[i].fd != rc_socket) {
+                            sockfd_to_receiver.at(fds[i].fd)->disconnect();
+                        }
+                    }
                 }
             }
             else {

@@ -115,6 +115,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
 
         void receive();
         void tick();
+        void disconnect();
         struct margin_stats_t {
             double min = 0.0;
             double max = 0.0;
