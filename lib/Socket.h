@@ -58,8 +58,12 @@ struct InetAddress {
     struct sockaddr *as_sockaddr() { return reinterpret_cast<sockaddr*>(&addr); };
 
     void resolveUdpDestination(const std::string& destination, int port);
+    void resolveTcpDestination(const std::string& destination, int port);
 
     std::string to_string() const;
+
+    private:
+    void resolve(const std::string& destination, int port, int socktype);
 };
 
 /** This class represents a UDP packet.
@@ -179,6 +183,7 @@ class TCPSocket {
         TCPSocket& operator=(TCPSocket&& other);
 
         bool valid(void) const;
+        void connect(InetAddress address, bool nonblock = false);
         void connect(const std::string& hostname, int port, bool nonblock = false);
         void connect(const std::string& hostname, int port, int timeout_ms);
         void listen(int port, const std::string& name);

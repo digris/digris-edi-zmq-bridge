@@ -28,6 +28,7 @@
 #include <vector>
 #include <cstring>
 #include "Socket.h"
+#include "resolver.h"
 #include "edi/ETIDecoder.hpp"
 
 
@@ -50,6 +51,11 @@ struct tcp_source_t {
     int port;
 
     std::string original_cmdline_arg;
+
+    bool operator==(const tcp_source_t& rhs) const {
+        return hostname == rhs.hostname and
+            port == rhs.port;
+    }
 };
 
 struct udp_source_t {
@@ -59,6 +65,12 @@ struct udp_source_t {
     int port;
 
     std::string original_cmdline_arg;
+
+    bool operator==(const udp_source_t& rhs) const {
+        return bindto == rhs.bindto and
+            mcastaddr == rhs.mcastaddr and
+            port == rhs.port;
+    }
 };
 
 using source_t = std::variant<tcp_source_t, udp_source_t>;
@@ -78,7 +90,8 @@ class Receiver : public EdiDecoder::ETIDataCollector {
                 std::function<void(tagpacket_t&&, Receiver*)> push_tagpacket,
                 std::function<void(eti_frame_t&&)> eti_frame_callback,
                 bool reconstruct_eti,
-                int verbosity
+                int verbosity,
+                Resolver& resolver
                 );
         Receiver(const Receiver&) = delete;
         Receiver operator=(const Receiver&) = delete;
@@ -115,7 +128,10 @@ class Receiver : public EdiDecoder::ETIDataCollector {
 
         void receive();
         void tick();
+
+        void notify_dns_resolved(Socket::InetAddress address);
         void disconnect();
+
         struct margin_stats_t {
             double min = 0.0;
             double max = 0.0;
@@ -148,6 +164,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         size_t num_timeouts() const { return m_num_timeouts; }
 
         source_t source;
+        Resolver& resolver;
 
         // The EDISender will update the late count
         uint64_t num_late = 0;
@@ -208,7 +225,7 @@ class Receiver : public EdiDecoder::ETIDataCollector {
         std::deque<int> m_margins_ms;
 
         enum class tcp_sock_state_e {
-            DISABLED, CONNECTING, CONNECTED
+            DISABLED, RESOLVING, CONNECTING, CONNECTED
         };
         tcp_sock_state_e m_tcp_sock_state = tcp_sock_state_e::DISABLED;
         Socket::TCPSocket m_tcp_sock;

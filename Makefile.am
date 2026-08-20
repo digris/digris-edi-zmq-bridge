@@ -36,6 +36,8 @@ digris_zmq_converter_SOURCES  = src/zmq/main.cpp \
 libedi2edi_a_CFLAGS   = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
 libedi2edi_a_CXXFLAGS = -Wall $(INCLUDE) $(PTHREAD_CFLAGS) $(GITVERSION_FLAGS)
 libedi2edi_a_SOURCES  = src/receiver.h src/receiver.cpp \
+						src/resolver.h src/resolver.cpp \
+						src/utils.h src/utils.cpp \
 						src/EDISender.h src/EDISender.cpp \
 						src/StatsSender.h src/StatsSender.cpp \
 						src/zmq/edi2zmq.hpp src/zmq/edi2zmq.cpp \

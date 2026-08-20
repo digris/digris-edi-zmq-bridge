@@ -56,6 +56,17 @@ AC_COMPILE_IFELSE([ AC_LANG_PROGRAM([[
                      AC_DEFINE(HAVE_SO_NOSIGPIPE, 1, [Define this symbol if you have SO_NOSIGPIPE]) ],
                    [ AC_MSG_RESULT(no) ])
 
+AC_MSG_CHECKING(for prctl and PR_SET_NAME)
+AC_COMPILE_IFELSE([ AC_LANG_PROGRAM([[
+                    #include <sys/prctl.h>
+                    void set_thread_name() {
+                        prctl(PR_SET_NAME,"test",0,0,0);
+                    }
+                    ]])],
+                   [ AC_MSG_RESULT(yes)
+                     AC_DEFINE(HAVE_PRCTL, 1, [Define this symbol if you have prctl and PR_SET_NAME]) ],
+                   [ AC_MSG_RESULT(no) ])
+
 # On some platforms, std::atomic needs a helper library
 AC_MSG_CHECKING(whether -latomic is needed)
 AC_LINK_IFELSE([AC_LANG_SOURCE([[

@@ -46,8 +46,10 @@ Receiver::Receiver(source_t& source,
         std::function<void(tagpacket_t&&, Receiver*)> push_tagpacket,
         std::function<void(eti_frame_t&&)> eti_frame_callback,
         bool reconstruct_eti,
-        int verbosity) :
+        int verbosity,
+        Resolver& resolver) :
     source(source),
+    resolver(resolver),
     m_push_tagpacket_callback(push_tagpacket),
     m_eti_frame_callback(eti_frame_callback),
     m_reconstruct_eti(reconstruct_eti),
@@ -352,22 +354,12 @@ void Receiver::tick()
             m_tcp_sock.close();
             m_edi_decoder.reset();
 
-            try {
-                if (m_verbosity > 0) {
-                    etiLog.level(debug) << "Attempt connect to " << s.hostname << ":" << s.port;
-                }
-                m_tcp_sock.connect(s.hostname, s.port, /*nonblock*/ true);
+            if (m_verbosity > 0) {
+                etiLog.level(debug) << "Attempt connect to " << s.hostname << ":" << s.port;
             }
-            catch (const std::runtime_error& e) {
-                if (m_verbosity > 0) {
-                    etiLog.level(debug) << "Connecting to " << s.hostname << ":" << s.port <<
-                        " failed: " << e.what();
-                }
-                m_most_recent_connect_error.message = e.what();
-                m_most_recent_connect_error.timestamp = std::chrono::system_clock::now();
-            }
+            resolver.request_resolve(s.hostname, s.port);
 
-            m_tcp_sock_state = tcp_sock_state_e::CONNECTING;
+            m_tcp_sock_state = tcp_sock_state_e::RESOLVING;
             // Set state to CONNECTED only on successful data receive because of nonblock=true
             reconnect_at = std::chrono::steady_clock::now() + RECONNECT_DELAY;
         };
@@ -376,6 +368,14 @@ void Receiver::tick()
             switch (m_tcp_sock_state) {
                 case tcp_sock_state_e::DISABLED:
                     do_reconnect();
+                    break;
+                case tcp_sock_state_e::RESOLVING:
+                    if (reconnect_at < std::chrono::steady_clock::now()) {
+                        etiLog.level(info) << "Timeout during DNS resolution for TCP " <<
+                            s.hostname << ":" << s.port;
+                        m_num_timeouts++;
+                        do_reconnect();
+                    }
                     break;
                 case tcp_sock_state_e::CONNECTING:
                     if (reconnect_at < std::chrono::steady_clock::now()) {
@@ -397,6 +397,7 @@ void Receiver::tick()
         else {
             switch (m_tcp_sock_state) {
                 case tcp_sock_state_e::DISABLED:
+                case tcp_sock_state_e::RESOLVING:
                     break;
                 case tcp_sock_state_e::CONNECTING:
                 case tcp_sock_state_e::CONNECTED:
@@ -433,6 +434,28 @@ void Receiver::tick()
             m_udp_sock_ready = false;
             reconnected_at = std::nullopt;
             m_edi_decoder.reset();
+        }
+    }
+}
+
+void Receiver::notify_dns_resolved(Socket::InetAddress address)
+{
+    if (std::holds_alternative<tcp_source_t>(source)) {
+        const auto& s = std::get<tcp_source_t>(source);
+        if (m_tcp_sock_state == tcp_sock_state_e::RESOLVING) {
+            if (m_verbosity > 0) {
+                etiLog.level(debug) << "DNS for " << s.hostname << ":" << s.port <<
+                    " resolved to " << address.to_string();
+            }
+            try {
+                m_tcp_sock.connect(address, true);
+                m_tcp_sock_state = tcp_sock_state_e::CONNECTING;
+            }
+            catch (const std::runtime_error& e) {
+                etiLog.level(warn) << "Failed to connect to " << s.hostname << ":" << s.port <<
+                    ": " << e.what();
+                m_tcp_sock_state = tcp_sock_state_e::DISABLED;
+            }
         }
     }
 }
@@ -537,7 +560,7 @@ void Receiver::receive_udp()
             EdiDecoder::Packet packet{std::move(p.buffer)};
             if (!m_edi_decoder) {
                 m_edi_decoder = std::make_shared<EdiDecoder::ETIDecoder>(*this);
-                m_edi_decoder->set_verbose(m_verbosity > 1);
+                m_edi_decoder->set_verbose(m_verbosity > 2);
             }
             m_edi_decoder->push_packet(std::move(packet));
 
@@ -580,7 +603,7 @@ void Receiver::receive_tcp()
         m_tcp_rx_buf.resize(ret);
         if (!m_edi_decoder) {
             m_edi_decoder = std::make_shared<EdiDecoder::ETIDecoder>(*this);
-            m_edi_decoder->set_verbose(m_verbosity > 1);
+            m_edi_decoder->set_verbose(m_verbosity > 2);
         }
 
         m_edi_decoder->push_bytes(m_tcp_rx_buf);
@@ -623,7 +646,7 @@ void Receiver::set_verbosity(int verbosity)
 {
     m_verbosity = verbosity;
     if (m_edi_decoder) {
-        m_edi_decoder->set_verbose(m_verbosity > 1);
+        m_edi_decoder->set_verbose(m_verbosity > 2);
     }
 }
 

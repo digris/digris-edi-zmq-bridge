@@ -25,6 +25,7 @@
 #include <future>
 
 #include "Log.h"
+#include "utils.h"
 
 using namespace std;
 
@@ -70,6 +71,8 @@ void WebServer::update_stats_json(const std::string& new_stats_json)
 
 void WebServer::serve()
 {
+    set_thread_name("webserver");
+
     deque<future<bool> > running_connections;
 
     while (running) {

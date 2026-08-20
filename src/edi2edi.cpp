@@ -41,6 +41,8 @@
 #include "common.h"
 #include "edi2edi.h"
 #include "Json.h"
+#include "resolver.h"
+#include "utils.h"
 
 using namespace std;
 
@@ -145,12 +147,33 @@ static string timepoint_to_string(const chrono::system_clock::time_point& tp)
 
 int Main::start(int argc, char **argv)
 {
+    set_thread_name("edi2edi");
+
     if (argc == 1) {
         usage();
         return 1;
     }
 
     std::vector<source_t> sources;
+    auto add_source = [&](const source_t& source) {
+        for (const auto& existing : sources) {
+            if (existing == source) {
+                string errstr = "Duplicate source ";
+
+                if (std::holds_alternative<tcp_source_t>(source)) {
+                    const auto& s = std::get<tcp_source_t>(source);
+                    errstr += s.original_cmdline_arg;
+                }
+                else if (std::holds_alternative<udp_source_t>(source)) {
+                    const auto& s = std::get<udp_source_t>(source);
+                    errstr += s.original_cmdline_arg;
+                }
+
+                throw runtime_error(errstr);
+            }
+        }
+        sources.push_back(source);
+    };
 
     int ch = 0;
     int index = 0;
@@ -252,7 +275,7 @@ int Main::start(int argc, char **argv)
                             optarg_s
                         };
 
-                        sources.push_back(source);
+                        add_source(source);
                     }
                     catch (const std::exception& e) {
                         throw runtime_error(string{"The -c or -F option "} + optarg_s + " is not valid");
@@ -285,7 +308,7 @@ int Main::start(int argc, char **argv)
                     }
 
                     try {
-                        sources.push_back(source);
+                        add_source(source);
                     }
                     catch (const std::exception& e) {
                         throw runtime_error(string{"The -c or -F option "} + optarg_s + " is not valid");
@@ -346,7 +369,7 @@ int Main::start(int argc, char **argv)
         }
     }
 
-    edi_conf.verbose = verbosity > 1;
+    edi_conf.verbose = verbosity > 2;
 
     if (not startupcheck.empty()) {
         etiLog.level(info) << "Running startup check '" << startupcheck << "'";
@@ -405,7 +428,10 @@ int Main::start(int argc, char **argv)
         etiLog.level(warn) << "UDP Stats Sender enabled without unique id!";
     }
 
+    Resolver resolver(verbosity > 1);
+
     receivers.reserve(16); // Ensure the receivers don't get moved around, as their edi_decoder needs their address
+
     for (auto& source : sources) {
 
         auto tagpacket_callback = [&](tagpacket_t&& tp, Receiver* r) {
@@ -415,7 +441,7 @@ int Main::start(int argc, char **argv)
         auto eti_callback = [&](eti_frame_t&& f) {
             eti_zmq_sender.encode_zmq_frame(std::move(f));
         };
-        receivers.emplace_back(source, receive_timeout, tagpacket_callback, eti_callback, zmq_output_enabled, verbosity);
+        receivers.emplace_back(source, receive_timeout, tagpacket_callback, eti_callback, zmq_output_enabled, verbosity, resolver);
     }
 
     size_t num_enabled = count_if(receivers.cbegin(), receivers.cend(),
@@ -522,7 +548,7 @@ int Main::start(int argc, char **argv)
 
 
             size_t num_fds = 0;
-            struct pollfd fds[16];
+            struct pollfd fds[17];
             unordered_map<int, Receiver*> sockfd_to_receiver;
             for (auto& rx : receivers) {
                 rx.tick();
@@ -543,6 +569,10 @@ int Main::start(int argc, char **argv)
                 num_fds++;
             }
 
+            fds[num_fds].fd = resolver.get_poll_sockfd();
+            fds[num_fds].events = POLLIN;
+            num_fds++;
+
             constexpr int POLL_TIMEOUT_FRAMES = 2;
             int retval = poll(fds, num_fds, 24 * POLL_TIMEOUT_FRAMES);
 
@@ -558,6 +588,27 @@ int Main::start(int argc, char **argv)
                     if (fds[i].revents & POLLIN) {
                         if (rc_socket != 1 and fds[i].fd == rc_socket) {
                             handle_rc_request();
+                        }
+                        else if (fds[i].fd == resolver.get_poll_sockfd()) {
+                            for (auto result : resolver.get_resolve_results()) {
+                                auto it = std::find_if(receivers.begin(), receivers.end(),
+                                    [&](const auto& rx) {
+                                        const auto& src = rx.source;
+                                        if (std::holds_alternative<tcp_source_t>(src)) {
+                                            const auto& s = std::get<tcp_source_t>(src);
+                                            return s.hostname == result.hostname and s.port == result.port;
+                                        }
+                                        return false;
+                                    });
+
+                                if (it != receivers.cend()) {
+                                    it->notify_dns_resolved(result.addr);
+                                }
+
+                                // One result will write one byte into the pipe
+                                char buf[1];
+                                read(fds[i].fd, buf, sizeof(buf));
+                            }
                         }
                         else {
                             // This can throw out_of_range, which is a logic_error and should never happen

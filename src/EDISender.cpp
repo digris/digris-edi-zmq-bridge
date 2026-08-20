@@ -27,6 +27,7 @@
 
 #include "EDISender.h"
 #include "Log.h"
+#include "utils.h"
 #include <cstring>
 #include <algorithm>
 
@@ -306,6 +307,8 @@ void EDISender::send_tagpacket(tagpacket_t& tp)
 
 void EDISender::process()
 {
+    set_thread_name("edisender");
+
     bool prev_dlfc_valid = false;
     uint16_t prev_dlfc = 0;
 

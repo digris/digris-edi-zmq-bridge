@@ -39,13 +39,23 @@ using namespace std;
 
 void InetAddress::resolveUdpDestination(const std::string& destination, int port)
 {
+    resolve(destination, port, SOCK_DGRAM);
+}
+
+void InetAddress::resolveTcpDestination(const std::string& destination, int port)
+{
+    resolve(destination, port, SOCK_STREAM);
+}
+
+void InetAddress::resolve(const std::string& destination, int port, int socktype)
+{
     char service[NI_MAXSERV];
     snprintf(service, NI_MAXSERV-1, "%d", port);
 
     struct addrinfo hints;
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
+    hints.ai_socktype = socktype;
     hints.ai_flags = 0;
     hints.ai_protocol = 0;
 
@@ -745,6 +755,51 @@ void TCPSocket::connect(const std::string& hostname, int port, bool nonblock)
     freeaddrinfo(result);           /* No longer needed */
 
     if (rp == nullptr) {
+        throw runtime_error("Could not connect");
+    }
+}
+
+void TCPSocket::connect(InetAddress address, bool nonblock)
+{
+    if (m_sock != INVALID_SOCKET) {
+        throw std::logic_error("You may only connect an invalid TCPSocket");
+    }
+
+    int sfd = ::socket(AF_INET, SOCK_STREAM, 0);
+
+    if (nonblock) {
+        int flags = fcntl(sfd, F_GETFL);
+        if (flags == -1) {
+            std::string errstr(strerror(errno));
+            ::close(sfd);
+            throw std::runtime_error("TCP: Could not get socket flags: " + errstr);
+        }
+
+        if (fcntl(sfd, F_SETFL, flags | O_NONBLOCK) == -1) {
+            std::string errstr(strerror(errno));
+            ::close(sfd);
+            throw std::runtime_error("TCP: Could not set O_NONBLOCK: " + errstr);
+        }
+    }
+
+    int ret = ::connect(sfd, address.as_sockaddr(), sizeof(sockaddr_in));
+    if (ret != -1 or (ret == -1 and errno == EINPROGRESS)) {
+        m_sock = sfd;
+    }
+    else {
+        ::close(sfd);
+    }
+
+    if (m_sock != INVALID_SOCKET) {
+#if defined(HAVE_SO_NOSIGPIPE)
+        int val = 1;
+        if (setsockopt(m_sock, SOL_SOCKET, SO_NOSIGPIPE, &val, sizeof(val))
+                == SOCKET_ERROR) {
+            throw std::runtime_error("Can't set SO_NOSIGPIPE");
+        }
+#endif
+    }
+    else {
         throw runtime_error("Could not connect");
     }
 }
