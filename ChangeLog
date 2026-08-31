@@ -1,6 +1,11 @@
 This file contains information about the changes done to
 the tools in this repository
 
+2026-08-31: Matthias P. Braendli <matthias@mpb.li>
+	(v0.12.0):
+		Do DNS resolutions outside of connect flow, to avoid blocking main thread.
+		Fix `reconnect_at` calculation.
+
 2026-06-25: Matthias P. Braendli <matthias@mpb.li>
 	(v0.11.0):
 		Improve performance, HTTP stats, connection handling.
